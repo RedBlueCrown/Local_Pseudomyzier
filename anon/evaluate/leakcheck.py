@@ -153,7 +153,7 @@ def check(pkg: DocxPackage, doc: Document, terms: list[Term], tool_ranges: list[
             continue
         blob = normalise_simple("\n".join(chunks))
         seen: set[str] = set()
-        for m, term in matcher.finditer(blob):
+        for _m, term in matcher.finditer(blob):
             if term.entity in seen:
                 continue
             seen.add(term.entity)

@@ -128,7 +128,7 @@ def setup_models(
         from huggingface_hub import model_info, snapshot_download  # noqa: PLC0415
     except ImportError:
         typer.secho("huggingface_hub fehlt: pip install .[ner]", fg="red", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     allowed = {x.lower() for x in cfg.rules["ner"].get("allowed_licenses", [])}
     ok = False
     for backend in cfg.rules["ner"].get("backends", []):

@@ -109,13 +109,12 @@ class RubrumParser:
         lines = self._lines(doc)
         state: str | None = None  # party_name | party_addr | rep_name | rep_addr
         block_lines = 0
-        rep_span: Span | None = None
         for line in lines:
             text = line.text
             stripped = text.strip()
             m = self.party_label.match(text)
             if m:
-                state, block_lines, rep_span = "party_name", 0, None
+                state, block_lines = "party_name", 0
                 state = self._content(line, line.start + m.end(), "party_name", spans) or state
                 continue
             if state is None:

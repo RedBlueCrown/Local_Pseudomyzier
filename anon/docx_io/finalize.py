@@ -418,7 +418,7 @@ def strip_metadata(pkg: DocxPackage, *, strip_custom_xml: bool = True, remove_gl
         for tag in ("rsids", "docVars", "attachedTemplate", "mailMerge", "trackRevisions"):
             for el in root.findall(w(tag)):
                 if tag == "attachedTemplate":
-                    rid = el.get(f"{{http://schemas.openxmlformats.org/officeDocument/2006/relationships}}id")
+                    rid = el.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
                     if rid:
                         pkg.remove_relationship(settings, rid)
                 root.remove(el)

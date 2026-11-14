@@ -58,7 +58,7 @@ def _cell(text: str, width: int, bold: bool = False, shade: str | None = None) -
         shd.set(w("val"), "clear")
         shd.set(w("color"), "auto")
         shd.set(w("fill"), shade)
-    for i, line in enumerate(text.split("\n") or [""]):
+    for line in text.split("\n") or [""]:
         tc.append(_para(_run(line, bold=bold, size=18)))
     return tc
 
