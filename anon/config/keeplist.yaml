@@ -53,20 +53,20 @@ publication_places:
 
 # Names in cited court decisions ("Kaiser v. Liechtenstein", "Müller gegen Schweiz").
 cited_case_names:
-  # "Abuelo Insua Juan Bautista v Liechtensteinische Invalidenversicherung" (bare v between names)
+  # "Muster Moreno v Liechtensteinische Invalidenversicherung" (bare v between names)
   - '\b(?:[A-ZÄÖÜ][\w''-]+\s+){0,4}[A-ZÄÖÜ][\w''-]+\s+v\.?\s+(?:the\s+)?(?:[A-ZÄÖÜ][\w''-]+(?:\s+|$)){1,4}'
   - '\b[A-ZÄÖÜ][\w''-]+(?:\s(?:und|and|&)\s[A-ZÄÖÜ][\w''-]+)?(?:\s(?:und\s+andere|and\s+Others|et\s+autres|u\.\s?a\.))?\s(?:v\.|vs\.|c\.|gegen|against)\s(?:the\s)?(?:Liechtenstein|Österreich|Austria|Schweiz|Switzerland|Deutschland|Germany|Frankreich|France|Italien|Italy|Spanien|Spain|Portugal|Polen|Poland|Russland|Russia|Türkei|Turkey|Vereinigte[sn]?\s+Königreich|United\s+Kingdom|Belgien|Belgium|Niederlande|Netherlands|Griechenland|Greece|Rumänien|Romania|Ungarn|Hungary|Kroatien|Croatia|Slowenien|Slovenia|Tschechien|Czech\s+Republic|Slowakei|Slovakia|Norwegen|Norway|Island|Iceland|Schweden|Sweden|Finnland|Finland|Dänemark|Denmark|Irland|Ireland|Luxemburg|Luxembourg|Malta|Zypern|Cyprus|Bulgarien|Bulgaria|Ukraine|Serbien|Serbia|Albanien|Albania|Montenegro|San\s+Marino|Monaco|Andorra|Lettland|Latvia|Litauen|Lithuania|Estland|Estonia|EFTA-Überwachungsbehörde|ESA|Kommission|Commission|Rat|Council)\b'
 
 # Cited authors ("vgl. Kley/Vogt, Grundrechtspraxis, Rz 12"; "Hangartner, in: ...").
 cited_authors:
-  # author lists "Kley/Vogt", "Pierre Tschannen/Markus Müller/ Markus Kern, Titel"
+  # author lists "Kley/Vogt", "Paul Tschan/Markus Möller/ Moritz Kerner, Titel"
   - '\b(?:[A-ZÄÖÜ][\w''-]*\.?\s+){0,2}[A-ZÄÖÜ][\w''-]+(?:\s*/\s*(?:[A-ZÄÖÜ][\w''-]*\.?\s+){0,2}[A-ZÄÖÜ][\w''-]+)+\b(?=\s*(?:,|\(|in:|\bin\b|\)))'
   - '\b[A-ZÄÖÜ][\w''-]+(?=,?\s+in:\s)'
   - '\b[A-ZÄÖÜ][\w''-]+(?=\s+in\s+[A-ZÄÖÜ][\w''-]+(?:/[A-ZÄÖÜ][\w''-]+)*\s*(?:\(Hrsg\.\)|,))'
   - '\b(?:[A-ZÄÖÜ][\w''-]*\.?\s+){0,2}[A-ZÄÖÜ][\w''-]+(?=,\s[^,.;\n\d]{3,90},\s(?:\d+\.?\s)?(?:Aufl\.|Auflage|Rz\.?|Rn\.?|N\.?\s?\d|S\.\s?\d|(?:19|20)\d{2}(?!\s+[A-ZÄÖÜ])))'
   - '\b(?:vgl\.|siehe|so|ebenso|ähnlich|gl\.M\.|aA|a\.A\.|mwN|m\.w\.N\.)\s+[A-ZÄÖÜ][\w''-]+(?=,\s)'
-  # "siehe Hugo Vogt, Rechtsgleichheit und …, in: Kley/Vallender [Hrsg.], …";
-  # "vgl. auch Herbert Wille, Liechtensteinisches Verwaltungsrecht, LPS Bd. 38, Schaan 2004"
+  # "siehe Hans Lehrer, Rechtsgleichheit und …, in: Kleiner/Lehrmann [Hrsg.], …";
+  # "vgl. auch Heribert Schreiber, Liechtensteinisches Verwaltungsrecht, LPS Bd. 38, Schaan 2004"
   - '\b(?:[A-ZÄÖÜ][\w''-]*\.?\s+){0,3}[A-ZÄÖÜ][\w''-]+(?=,\s[^;\n]{3,160}?,\s(?:in:|LPS\b|a\.\s?a\.\s?O\.|Bd\.|Band\b|(?:\d+\.\s)?Aufl|[A-ZÄÖÜ][\w.-]+\s(?:19|20)\d{2}\b))'
 
 # Authorities that are a party or whose decision is appealed.

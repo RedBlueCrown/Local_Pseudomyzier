@@ -148,7 +148,7 @@ detect:
       - 'Partei(?:en)?'
       - '(?:Interessierte|Beteiligte|Weitere)\s+Parteie?n?'
     # Labels whose content is only a party if it looks like a name
-    # ("betreffend:  Mario Bezo, geboren am ..." vs "betreffend: Baubewilligung").
+    # ("betreffend:  Max Exempel, geboren am ..." vs "betreffend: Baubewilligung").
     weak_party_labels:
       - 'betreffend'
       - 'in\s+Sachen'
@@ -273,8 +273,8 @@ detect:
   # Words kept with company_keep_activity: true ("Muster Bank AG" -> "A Bank AG")
   company_activity_words: [Bank, Privatbank, Treuhand, Immobilien, Bau, Holding, Invest, Investment, Versicherung, Versicherungen, Consulting, Trading, Management, Verwaltung, Vermögensverwaltung, Capital, Finanz, Finance, Handel, Transport, Logistik, Garage, Elektro, Sanitär, Architektur, Hotel, Restaurant, Software, Media, Marketing, Services, Pharma, Medical, Energie, Industrie, Technik, Engineering, Group, Gruppe, Partners]
 
-  # A capitalised word after these nouns is a place ("Krankenhaus Urm",
-  # "Gemeindegericht in Zagreb", "Justizanstalt Feldkirch").
+  # A capitalised word after these nouns is a place ("Krankenhaus Beispielstadt",
+  # "Bezirksgericht in Graz", "Justizanstalt Feldkirch").
   place_context_nouns: '(?:Krankenhaus|Spital|Klinik|Klinikum|Psychiatrie|Kantonsspital|Landesspital|Universitätsspital|Justizanstalt|Gefängnis|Strafanstalt|Gemeindegericht|Bezirksgericht|Amtsgericht|Kreisgericht|Landesgericht|Stadt|Ortschaft|Dorf)(?:es|s)?(?:\s+(?:von|in|zu))?'
   # Places used as field context ("Feldweg Riet", "Gebiet Riet").
   field_context_nouns: '(?:Gebiet|Flur|Flurname|Flurbezeichnung|Ortsteil|Ortsbezeichnung|Weiler|Quartier|Lokalität|Örtlichkeit|Lage|Gebietsbezeichnung|Riedgebiet|Alp|Maiensäss|Rüfe|Feldweg|Flurweg|Güterweg|Wanderweg|Weg|Fliessgewässer|Gewässer|Bach|Kanal|Graben)'
@@ -289,7 +289,7 @@ detect:
     # FL postcodes are recognised anywhere when followed by a place name.
     fl: '94(?:8[5-9]|9[0-8])'
     # Foreign postcodes need a country prefix (CH-9470) or an address context.
-    # Country prefixes before foreign postcodes ("CH-9470 Buchs", "SVN-2250 Ptuj").
+    # Country prefixes before foreign postcodes ("CH-9470 Buchs", "SLO-1000 Ljubljana").
     foreign_prefixes: ['CH', 'A', 'AT', 'D', 'DE', 'I', 'IT', 'F', 'FR', 'SLO', 'SVN', 'SI', 'HR', 'BIH', 'BA', 'SRB', 'RS', 'MNE', 'MK', 'AL', 'RKS', 'TR', 'PL', 'CZ', 'SK', 'H', 'HU', 'RO', 'BG', 'NL', 'B', 'L', 'E', 'ES', 'P', 'PT', 'GB', 'UK', 'DK', 'S', 'N', 'FIN', 'GR']
 
   plots:

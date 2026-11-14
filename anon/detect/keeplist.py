@@ -239,8 +239,8 @@ class KeepList:
         return list(people.values()), spans
 
     def cited_names(self, doc: Document, pattern_spans: list[Span]) -> list[Span]:
-        """Applicants of cited decisions ("Hanzevacki gegen Kroatien") are kept
-        wherever they occur ("Herr Hanzevacki")."""
+        """Applicants of cited decisions ("Muster gegen Kroatien") are kept
+        wherever they occur ("Herr Muster")."""
         forms: set[str] = set()
         for k in pattern_spans:
             if k.role != "cited_case":

@@ -183,7 +183,7 @@ decisions: run `anon evaluate` on every new gold pair and extend
 * Birth-date generalisation is *year + 1* (`10.08.2000 → vor dem Jahr 2001`).
 * `Gemeinde Vaduz` as a place designation is anonymised (`Gemeinde ***`);
   only an authority that is a party in the Rubrum is kept, with its address
-  (`Liechtensteinische Invalidenversicherung, Gerberweg 2, 9490 Vaduz`).
+  (`Liechtensteinische Invalidenversicherung, Amtsweg 1, 9490 Vaduz`).
 * Benches name roles before *or after* the names (`Dr. Marc Bauer als
   Richter; Daniela Kollerer als Schriftführerin`, `Oberstrichterinnen …
   als weitere Mitglieder`); the copy is signed after `Für die Richtigkeit
@@ -192,14 +192,14 @@ decisions: run `anon evaluate` on every new gold pair and extend
   `betreffend:` as party label, `Interessierte Parteien: 1. … 2. …`,
   `Belangte Behörde:` (kept), blocks spread over empty paragraphs,
   profession/nationality/detention lines deleted with the address.
-* Cited scholars appear as `siehe Hugo Vogt, Titel, in: Kley/Vallender
+* Cited scholars appear as `siehe Hans Lehrer, Titel, in: Kleiner/Lehrmann
   [Hrsg.], …, LPS Bd. 52, Schaan 2012` and author lists `A/B/ C, Titel`;
   publication places (`Bern 2022`) stay. Applicants and places of cited
   ECHR decisions stay (places there become questions, not changes).
 * Field names also unquoted after `Feldweg`; water bodies (`Esche`) and
-  clinic/prison/court towns (`Krankenhaus Urm`, `Gemeindegericht in
+  clinic/prison/court towns (`Krankenhaus Beispielstadt`, `Gemeindegericht in
   Zagreb`) are places; `Plan Nr. …` is an identifier; plots also in
-  compounds (`Strassengrundstück Nr. 8965`).
+  compounds (`Strassengrundstück Nr. 1234`).
 
 ### Open points
 
@@ -215,7 +215,7 @@ decisions: run `anon evaluate` on every new gold pair and extend
 
 ### Assumptions (all switchable)
 
-* The court seat in the date line (`Vaduz, 24.06.2026`) is kept
+* The court seat in the date line (`Vaduz, 10. Juni 2026`) is kept
   (`keeplist.yaml: court_seat_lines`); so are court/authority seats
   (`Fürstliches Landgericht, Abteilung 8, Vaduz`).
 * Representatives are replaced as a whole block in the Rubrum (`***`); in the

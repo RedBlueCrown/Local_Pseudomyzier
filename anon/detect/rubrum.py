@@ -150,7 +150,7 @@ class RubrumParser:
             if m:
                 content = text[m.end():]
                 if state in ("party_addr", "party_name") and self.address_only.match(content):
-                    # "Revisionswerber/ Hans Müller, Hofstrasse 4," + "Revisionsgegner: SVN-2250 Ptuj"
+                    # "Revisionswerber/ Hans Beispiel, Dorfgasse 9," + "Revisionsgegner: SLO-1000 Ljubljana"
                     ns, ne = self._trim(line.para.norm, line.start + m.end(), line.end)
                     if ne > ns:
                         spans.append(self._span(line.para, ns, ne, "address_tail", 0.9, note="Adresszeile im Rubrum"))
