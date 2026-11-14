@@ -1,0 +1,1 @@
+# Product names that identify a party (one per line). Matched whole-token.

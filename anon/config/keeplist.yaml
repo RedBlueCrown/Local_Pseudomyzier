@@ -1,0 +1,98 @@
+# Keep-list: things that must NEVER be anonymised (guideline: judges, clerk,
+# cited authors, names in cited ECHR/CJEU/EFTA Court decisions, authorities that
+# are a party or whose decision is appealed, case numbers, statute citations).
+#
+# Anything detected inside a keep-list match is dropped. Regexes run on the
+# normalised paragraph text (see rules.yaml).
+
+# Judges and clerk are extracted dynamically: a trigger word followed by a list
+# of names ("Richter Dr. Hugo Vogt, lic. iur. Thomas Hasler und Dr. Nicole Beck").
+judges:
+  triggers:
+    - '\b(?:Vize)?[Pp]räsident(?:in|en|innen)?\b'
+    - '\b[Vv]orsitz(?:es)?\s+(?:von|des|der)(?:\s+(?:Vize)?[Pp]räsident(?:in|en)?)?'
+    - '\b(?:Senats|Kammer)?[Vv]orsitzende[rn]?\b'
+    - '\b(?:Ersatz|Ober|Land|Fach|Laien|Jugend|Verwaltungs|Einzel|Straf|Zivil)?[Rr]ichter(?:in|innen|n|s)?\b'
+    - '\bBeisitzer(?:in|innen)?\b'
+    - '\bHofr(?:at|ätin)\b'
+  clerk_triggers:
+    - '\bSchriftf(?:ü|ue)hrer(?:in|s)?\b'
+    - '\bProtokollf(?:ü|ue)hrer(?:in|s)?\b'
+    - '\bGerichtsschreiber(?:in|s)?\b'
+    - '\bRechtspfleger(?:in)?\b'
+
+# Case numbers (Aktenzeichen): VGH.2026.21, VBK 2025/81, StGH 2024/024, 05 CG.2020.123
+case_numbers:
+  - '\b(?:\d{1,2}\s)?[A-Z][A-Za-z]{0,5}(?:\.|\s)?\d{4}[./]\d{1,5}(?:[./-]\d{1,5})*\b'
+  - '\b(?:\d{1,2}\s)?[A-Z][A-Za-z]{0,5}\s?\d{1,5}/\d{2,4}\b'
+
+# Statute and literature citations.
+citations:
+  - '\bLGBl\.?\s*(?:Nr\.\s*)?\d{4}\s*(?:/|Nr\.)\s*\d+'
+  - '\b(?:Art|Artikel|Abs|Ziff|lit|Bst|Rz|Rn|Erw|E|S|N|Kap|Fn|FN|Anm|Bd|Aufl|Tz|Rs|Pkt)\.?\s*\d+[a-z]?(?:\s*(?:ff?\.|bis|-|und)\s*\d+[a-z]?)*'
+  - '§§?\s*\d+[a-z]?(?:\s*(?:ff?\.|bis|-|und)\s*\d+[a-z]?)*'
+  - '\b(?:LES|LJZ|ELG|SZW|ZBl|AJP|EuGRZ|ÖJZ|JBl|ZfRV|SJZ|ZSR|ZVR|EvBl|RdW|wbl|ecolex|GesRZ|PSR|ZWF|ZIK|SZIER)\s*\d{4}\s*,?\s*(?:S\.\s*)?\d+'
+  - '\bBGE\s*\d{1,3}\s*[IVX]+[a-z]?\s*\d+'
+  - '\b(?:BBl|SR|AS|ABl\.?|Abl\.?|BGBl\.?)\s*(?:I\s*)?\d+(?:[./]\d+)*'
+  - '\b(?:C|T|E|F)-\d{1,4}/\d{2}\b'
+  - '\b(?:Nr\.|no\.|No\.|Appl\.|Beschwerde-?Nr\.)\s*\d{2,6}/\d{2}\b'
+  - '\bECLI:[A-Z]{2}:[A-Z]+:\d{4}:[\w.]+'
+
+# Names in cited court decisions ("Kaiser v. Liechtenstein", "Müller gegen Schweiz").
+cited_case_names:
+  - '\b[A-ZÄÖÜ][\w''-]+(?:\s(?:und|and|&)\s[A-ZÄÖÜ][\w''-]+)?(?:\s(?:und\s+andere|and\s+Others|et\s+autres|u\.\s?a\.))?\s(?:v\.|vs\.|c\.|gegen|against)\s(?:the\s)?(?:Liechtenstein|Österreich|Austria|Schweiz|Switzerland|Deutschland|Germany|Frankreich|France|Italien|Italy|Spanien|Spain|Portugal|Polen|Poland|Russland|Russia|Türkei|Turkey|Vereinigte[sn]?\s+Königreich|United\s+Kingdom|Belgien|Belgium|Niederlande|Netherlands|Griechenland|Greece|Rumänien|Romania|Ungarn|Hungary|Kroatien|Croatia|Slowenien|Slovenia|Tschechien|Czech\s+Republic|Slowakei|Slovakia|Norwegen|Norway|Island|Iceland|Schweden|Sweden|Finnland|Finland|Dänemark|Denmark|Irland|Ireland|Luxemburg|Luxembourg|Malta|Zypern|Cyprus|Bulgarien|Bulgaria|Ukraine|Serbien|Serbia|Albanien|Albania|Montenegro|San\s+Marino|Monaco|Andorra|Lettland|Latvia|Litauen|Lithuania|Estland|Estonia|EFTA-Überwachungsbehörde|ESA|Kommission|Commission|Rat|Council)\b'
+
+# Cited authors ("vgl. Kley/Vogt, Grundrechtspraxis, Rz 12"; "Hangartner, in: ...").
+cited_authors:
+  - '\b[A-ZÄÖÜ][\w''-]+(?:/[A-ZÄÖÜ][\w''-]+)+\b'
+  - '\b[A-ZÄÖÜ][\w''-]+(?=,?\s+in:\s)'
+  - '\b[A-ZÄÖÜ][\w''-]+(?=\s+in\s+[A-ZÄÖÜ][\w''-]+(?:/[A-ZÄÖÜ][\w''-]+)*\s*(?:\(Hrsg\.\)|,))'
+  - '\b[A-ZÄÖÜ][\w''-]+(?=,\s[^,.;\n]{3,90},\s(?:\d+\.\s)?(?:Aufl\.|Auflage|Rz\.?|Rn\.?|N\.?\s?\d|S\.\s?\d|\d{4}))'
+  - '(?<=\b(?:vgl\.|siehe|so|ebenso|ähnlich|gl\.M\.|aA|a\.A\.|mwN|m\.w\.N\.)\s)[A-ZÄÖÜ][\w''-]+(?=,\s)'
+
+# Authorities that are a party or whose decision is appealed.
+authorities:
+  - 'Regierung(?:\s+des\s+Fürstentums\s+Liechtenstein)?'
+  - '(?:Fürstliche[sr]?\s+)?(?:Landgericht|Obergericht|Oberste[rn]?\s+Gerichtshof|Verwaltungsgerichtshof|Staatsgerichtshof)'
+  - 'Beschwerdekommission\s+für\s+Verwaltungsangelegenheiten'
+  - 'Staatsanwaltschaft(?:\s+des\s+Fürstentums\s+Liechtenstein)?'
+  - 'Amt\s+für\s+[A-ZÄÖÜ][\w-]+(?:(?:,\s*|\s+und\s+)[A-ZÄÖÜ][\w-]+)*'
+  - 'Grundbuch-\s+und\s+Öffentlichkeitsregisteramt'
+  - 'Finanzmarktaufsicht(?:\s+Liechtenstein)?'
+  - '(?:Liechtensteinische\s+)?Steuerverwaltung'
+  - 'Liechtensteinische\s+Alters-\s+und\s+Hinterlassenenversicherung'
+  - 'AHV-IV-FAK(?:-Anstalten)?'
+  - 'Ausländer-\s+und\s+Passamt'
+  - 'Landespolizei'
+  - 'Landtag'
+  - 'Datenschutzstelle'
+  - 'Ombudsstelle\s+für\s+Kinder\s+und\s+Jugendliche'
+  - 'Stabsstelle\s+[A-ZÄÖÜ][\w-]+'
+  - 'Schlichtungsstelle'
+  - 'Liechtensteinische\s+Landesverwaltung'
+  - 'Fürstentum\s+Liechtenstein'
+
+# Place names inside these are kept when policy.keep_municipal_authorities is true.
+municipal_authority_prefixes:
+  - 'Gemeinde(?:rat|vorsteher(?:in)?|vorstehung|verwaltung|bauverwaltung|kanzlei)?'
+  - 'Bürgergenossenschaft'
+
+# Countries and supranational names are never anonymised.
+static:
+  - 'Liechtenstein'
+  - 'Schweiz'
+  - 'Österreich'
+  - 'Deutschland'
+  - 'Italien'
+  - 'Frankreich'
+  - 'Europäische[nr]?\s+Union'
+  - 'EWR'
+  - 'EFTA'
+  - 'Europa'
+  - 'Strassburg'
+  - 'Luxemburg'
+
+# The court seat in the date line ("Vaduz, 10. Juni 2026") is not anonymised.
+# Remove this entry if the court decides otherwise.
+court_seat_lines:
+  - '^\s*Vaduz(?=,\s+(?:den\s+|am\s+)?\d{1,2}\.\s*(?:\d{1,2}\.|[A-ZÄÖÜ][a-zäöü]+)\s*\d{4})'

@@ -1,0 +1,37 @@
+# Liechtenstein places. Format:  Place | adjective/demonym forms
+# A leading "?" marks an ambiguous form (also a common noun or surname). Such
+# forms are only changed when a place context precedes them ("in", "von",
+# "Gemeinde", postcode ...); otherwise they become a "Prüfen" comment.
+# Adjective forms ending in -er are also matched with -in / -innen.
+Vaduz | Vaduzer
+Schaan | Schaaner
+Balzers | Balzner
+Triesen | Triesner
+Triesenberg | Triesenberger
+?Planken | Plankner
+?Eschen | Eschner
+Mauren | ?Maurer
+Gamprin | Gampriner
+Ruggell | Ruggeller
+Schellenberg | ?Schellenberger
+Nendeln | Nendler
+Schaanwald | Schaanwälder
+Bendern | Benderer
+Gamprin-Bendern
+Mäls | Mälser
+Malbun | Malbuner
+?Steg | ?Steger
+Masescha
+Silum
+Gaflei
+Sücka
+Rotenboden
+Wangerberg
+Sareis
+Lawena
+Ebenholz
+Mühleholz
+Hinterschellenberg
+Mittlerschellenberg
+Vorderschellenberg
+Unterschaan

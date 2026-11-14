@@ -1,0 +1,3 @@
+# Flurnamen (field names). Quoted names after "Gebiet", "Flur", "im" etc. are
+# detected by pattern; add frequent unquoted ones here. "?" = ambiguous.
+?Riet

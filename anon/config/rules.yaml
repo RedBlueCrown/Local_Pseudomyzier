@@ -1,0 +1,281 @@
+# Anonymisierungsregeln (Richtlinie OGH, Interne Richtlinien zur Anonymisierung)
+#
+# This file is meant to be maintained by court staff. All regular expressions use
+# Python syntax and run on a *normalised* copy of each paragraph:
+#   - non-breaking / narrow spaces  -> " "
+#   - typographic quotes  „ “ ” « »  -> "      ‚ ‘ ’ ‹ ›  -> '
+#   - dashes  – — ‑ ‐ −  -> "-"
+#   - soft hyphens and zero-width characters are removed
+# The original characters in the document are never changed by normalisation.
+#
+# A user config passed with --config is deep-merged over this file.
+
+version: 1
+
+# Reviewer-facing categories. `author` becomes w:author of the tracked change, so
+# Word colours every category differently and "Show Markup > Specific People"
+# works as a category filter. `highlight` is a Word highlight colour
+# (yellow, green, cyan, magenta, blue, red, darkBlue, darkCyan, darkGreen,
+#  darkMagenta, darkRed, darkYellow, darkGray, lightGray, black).
+categories:
+  party:          {author: "Partei",     highlight: yellow}
+  representative: {author: "Vertreter",  highlight: cyan}
+  place:          {author: "Ort",        highlight: green}
+  plot:           {author: "Grundstück", highlight: magenta}
+  id:             {author: "Datum/ID",   highlight: lightGray}
+  review:         {author: "Prüfen",     highlight: null}
+
+# Open policy decisions (guideline leaves room) -> switches.
+policy:
+  # Treating doctors, expert witnesses, witnesses: letters | keep
+  third_parties: letters
+  # Party representatives (lawyers, law firms): stars | letters
+  representatives: stars
+  # Birth dates: stars | generalise
+  birth_dates: stars
+  # Used when birth_dates = generalise. {year_bound} = first year of the next
+  # decade + 1 (1990 -> 2001), matching "geboren vor dem Jahr 2001".
+  birth_date_generalise_template: "vor dem Jahr {year_bound}"
+  # Muster Bank AG -> "A AG" (false) or "A Bank AG" (true)
+  company_keep_activity: false
+  # Municipal authorities that are a party ("Gemeinde Vaduz") stay unchanged.
+  keep_municipal_authorities: true
+  stars: "***"
+  plot_start: 1
+  # Letters never handed out (e.g. ["I", "O"]); empty = full alphabet.
+  letters_skip: []
+  # Spans below this confidence become comments ("Prüfen") instead of changes.
+  review_threshold: 0.6
+  # Search the whole document for further occurrences of detected plot numbers
+  # (outside a "Grundstück Nr." context they are only suggested as comments).
+  rescan_plot_numbers: true
+
+finalize:
+  # Remove every comment (also pre-existing ones), not only the tool's.
+  remove_all_comments: true
+  # Remove customXml parts (DMS properties, content-control data bindings).
+  strip_custom_xml: true
+  # Remove the glossary document (building blocks) and the page-1 thumbnail.
+  remove_glossary: true
+  remove_thumbnail: true
+
+ner:
+  enabled: true
+  # gliner2 = Fastino GLiNER2 PII model (package `gliner2`), gliner = urchade fallback
+  backends: [gliner2, gliner]
+  models:
+    gliner2: fastino/gliner2-privacy-filter-PII-multi
+    gliner: urchade/gliner_multi_pii-v1
+  models_dir: ./models
+  threshold: 0.5
+  chunk_chars: 1500
+  # Licences accepted by `anon setup-models` (checked against the model card).
+  allowed_licenses: [apache-2.0, mit, bsd-3-clause, bsd-2-clause]
+  # NER label -> internal kind. Labels are passed to the model as given.
+  labels:
+    person: person
+    organization: org
+    company: org
+    location: place
+    address: address
+    date of birth: birthdate
+    phone number: id
+    email: id
+    iban: id
+    bank account number: id
+    social security number: id
+    license plate number: id
+    passport number: id
+    tax identification number: id
+
+llm:
+  enabled: false
+  # OpenAI-compatible endpoint (Ollama: http://localhost:11434/v1, vLLM: http://localhost:8000/v1)
+  base_url: "http://localhost:11434/v1"
+  model: "gpt-oss:20b"
+  # Only these hosts are ever contacted. Everything else is refused in code.
+  allowed_hosts: ["localhost", "127.0.0.1", "::1"]
+  timeout_s: 180
+  max_snippets: 3
+  snippet_chars: 300
+
+detect:
+  rubrum:
+    # Label recognition stops at the first paragraph matching one of these.
+    end_markers:
+      - '^\s*(?:[IVX]+\.|[A-Z]\.|\d+\.)?\s*(?:Sachverhalt|Tatbestand|Begründung|Entscheidungsgründe|Erwägungen|Zum Sachverhalt)\b'
+    max_paragraphs: 150
+    # Party labels at the start of a line (optionally numbered, followed by ":" or tab).
+    party_labels:
+      - 'Beschwerdef(?:ü|ue)hrer(?:in|innen)?'
+      - 'Beschwerdef(?:ü|ue)hrende[rn]?'
+      - 'Beschwerdegegner(?:in|innen)?'
+      - 'Kl(?:ä|ae)ger(?:in|innen)?'
+      - 'Klagende[rn]?'
+      - 'Beklagte[rn]?'
+      - 'Antragsteller(?:in|innen)?'
+      - 'Antragsgegner(?:in|innen)?'
+      - 'Berufungswerber(?:in|innen)?'
+      - 'Berufungsgegner(?:in|innen)?'
+      - 'Revisionswerber(?:in|innen)?'
+      - 'Revisionsgegner(?:in|innen)?'
+      - 'Rekurrent(?:in|innen|en)?'
+      - 'Rekurswerber(?:in|innen)?'
+      - 'Rekursgegner(?:in|innen)?'
+      - 'Gesuchsteller(?:in|innen)?'
+      - 'Gesuchsgegner(?:in|innen)?'
+      - 'Betroffene[rn]?'
+      - '(?:Mit|Verfahrens)?[Bb]eteiligte[rn]?'
+      - 'Beigeladene[rn]?'
+      - 'Nebenintervenient(?:in|innen|en)?'
+      - 'Angeklagte[rn]?'
+      - 'Beschuldigte[rn]?'
+      - 'Privatbeteiligte[rn]?'
+      - 'Opfer'
+      - 'Schuldner(?:in|innen)?'
+      - 'Gl(?:ä|ae)ubiger(?:in|innen)?'
+      - 'Verpflichtete[rn]?'
+      - 'Berechtigte[rn]?'
+      - 'Erblasser(?:in)?'
+      - 'Kurand(?:in)?'
+      - 'Partei(?:en)?'
+    representative_labels:
+      - 'vertreten\s+durch'
+      - 'vertr\.\s*d\.'
+      - '(?:Rechts|Prozess|Verfahrens)?[Vv]ertreter(?:in|innen)?'
+      - 'Verteidiger(?:in|innen)?'
+      - 'Verfahrenshelfer(?:in|innen)?'
+      - 'Zustellungsbevollm(?:ä|ae)chtigte[rn]?'
+    # A party block ends at a line starting with one of these.
+    block_terminators:
+      - '^(?:gegen|wider|wegen|betreffend|betr\.|in\s+Sachen|über|hat|haben|wird|werden|der|die|das|den|dem|des)\b'
+    # Lines continuing a party block are treated as address if they look like one.
+    address_line_hints:
+      - '\d'
+      - '\b(?:c/o|p\.\s?A\.|Postfach|Liechtenstein|Schweiz|Österreich|Deutschland)\b'
+    max_block_lines: 8
+
+  # Titles stay in the text ("Dr. Nova" -> "Dr. E").
+  titles:
+    - 'Univ\.-Prof\.'
+    - 'Prof\.'
+    - 'Dr\.\s?med\.(?:\s?dent\.|\s?vet\.)?'
+    - 'Dr\.\s?iur\.'
+    - 'Dr\.\s?phil\.'
+    - 'Dr\.\s?rer\.\s?(?:pol|nat)\.'
+    - 'Dr\.\s?oec\.'
+    - 'Dr\.'
+    - 'DDr\.'
+    - 'em\.'
+    - 'PD'
+    - 'Mag\.(?:\s?iur\.)?'
+    - 'MMag\.'
+    - 'Dipl\.-Ing\.'
+    - 'Ing\.'
+    - 'lic\.\s?iur\.'
+    - 'lic\.\s?oec\.'
+    - 'lic\.\s?phil\.'
+    - 'MLaw'
+    - 'BLaw'
+    - 'LL\.M\.'
+    - 'M\.A\.'
+    - 'MBA'
+    - 'MSc'
+    - 'BSc'
+    - 'RA'
+    - 'Rechtsanw(?:alt|ältin)'
+    - 'Notar(?:in)?'
+  honorifics: ['Herrn?', 'Frau', 'Hr\.', 'Fr\.', 'Fräulein']
+
+  # Nouns that introduce a natural person ("die Zeugin Maria Huber").
+  # role: the role given to the person (expert_or_doctor | affected_third)
+  person_context:
+    - {pattern: '(?:Haus|Fach)?(?:Arzt|Ärztin)|Psychiater(?:in)?|Psycholog(?:e|in)|Therapeut(?:in)?|Chiropraktiker(?:in)?|Sachverständige[rn]?|Gutachter(?:in)?|Zeug(?:e|in|en)|Dolmetscher(?:in)?', role: expert_or_doctor}
+    - {pattern: 'Ehe(?:mann|frau|gatte|gattin)|Gatt(?:e|in)|Lebens(?:partner|gefährte|gefährtin)(?:in)?|Sohn|Tochter|Vater|Mutter|Bruder|Schwester|Onkel|Tante|Neffe|Nichte|Enkel(?:in)?|Gro(?:ss|ß)(?:vater|mutter)|Schwieger(?:sohn|tochter|vater|mutter)', role: affected_third}
+    - {pattern: 'Geschäftsführer(?:in)?|Verwaltungsr(?:at|ätin)|Stiftungsr(?:at|ätin)|Treuhänder(?:in)?|Mitarbeiter(?:in)?|Arbeitgeber(?:in)?|Arbeitnehmer(?:in)?|Vermieter(?:in)?|Mieter(?:in)?|Nachbar(?:in)?|Erb(?:e|in)|Begünstigte[rn]?|Kund(?:e|in)|Lenker(?:in)?|Halter(?:in)?|Sachbearbeiter(?:in)?|Polizist(?:in)?|Beamt(?:e|er|in)|Inhaber(?:in)?|Gesellschafter(?:in)?|Aktionär(?:in)?|Organ', role: affected_third}
+
+  # Legal forms are KEPT; only the name part before them is replaced.
+  legal_forms:
+    - 'GmbH\s*&\s*Co\.?\s*KG'
+    - 'reg\.\s?Trust'
+    - 'Trust\s?reg\.'
+    - 'AG'
+    - 'Aktiengesellschaft'
+    - 'Anstalt'
+    - 'Establishment'
+    - 'GmbH'
+    - 'Stiftung'
+    - 'Foundation'
+    - 'Familienstiftung'
+    - 'Trust'
+    - 'Treuunternehmen'
+    - 'Trustunternehmen'
+    - 'Ltd\.?'
+    - 'Limited'
+    - 'Inc\.?'
+    - 'Corp\.?'
+    - 'S\.A\.'
+    - 'SA'
+    - 'S\.à\s?r\.l\.'
+    - 'Sàrl'
+    - 'SE'
+    - 'KG'
+    - 'OG'
+    - 'OHG'
+    - 'Genossenschaft'
+    - 'e\.V\.'
+    - 'LLC'
+    - 'LLP'
+    - 'plc'
+    - 'B\.V\.'
+    - 'N\.V\.'
+    - 'S\.p\.A\.'
+    - 'S\.r\.l\.'
+  # Words kept with company_keep_activity: true ("Muster Bank AG" -> "A Bank AG")
+  company_activity_words: [Bank, Privatbank, Treuhand, Immobilien, Bau, Holding, Invest, Investment, Versicherung, Versicherungen, Consulting, Trading, Management, Verwaltung, Vermögensverwaltung, Capital, Finanz, Finance, Handel, Transport, Logistik, Garage, Elektro, Sanitär, Architektur, Hotel, Restaurant, Software, Media, Marketing, Services, Pharma, Medical, Energie, Industrie, Technik, Engineering, Group, Gruppe, Partners]
+
+  streets:
+    suffixes: ['strasse', 'straße', 'str\.', 'gasse', 'weg', 'platz', 'allee', 'ring', 'halde', 'rain', 'bühel', 'gässle', 'gässli', 'strässle', 'promenade', 'quai', 'steig', 'zeile', 'damm', 'ufer', 'hof', 'park']
+    # Unnumbered street names are only suggested (comment) for these suffixes.
+    unnumbered_suffixes: ['strasse', 'straße', 'gasse']
+    prefix_words: ['Im', 'In der', 'In den', 'Auf der', 'Auf dem', 'Auf', 'Am', 'An der', 'Zum', 'Zur', 'Unterm', 'Oberm', 'Hinter der', 'Ob der', 'Unter der', 'Bim', 'Bir', 'Uf']
+    modifiers: ['Alte', 'Obere', 'Untere', 'Innere', 'Äussere', 'Neue', 'Kleine', 'Grosse', 'Hintere', 'Vordere', 'St\.', 'Sankt']
+
+  postcodes:
+    # FL postcodes are recognised anywhere when followed by a place name.
+    fl: '94(?:8[5-9]|9[0-8])'
+    # Foreign postcodes need a country prefix (CH-9470) or an address context.
+    foreign_prefixes: ['CH', 'A', 'AT', 'D', 'DE', 'I', 'F']
+
+  plots:
+    prefix: '(?:Grundst(?:ü|ue)ck(?:e|en|s|es)?|Parzelle(?:n)?|Parz\.|Gst\.?|GB-?Nr\.?|Grundbuchnummer|Grundbuchbl(?:att|\.)|Liegenschaft(?:en)?|Stockwerkeigentumseinheit(?:en)?|StWE(?:-Einheit(?:en)?)?|Baurechtsgrundst(?:ü|ue)ck(?:e|en|s)?|Teilfl(?:ä|ae)che\s+(?:des|von)\s+Grundst(?:ü|ue)ck(?:s|es)?)'
+    number_word: '(?:Nr\.|Nrn\.|Nummer(?:n)?|No\.)'
+    number: '\d{1,6}[a-z]?'
+    separators: '(?:,|/|und|sowie|bzw\.|oder|-|bis)'
+
+  birthdates:
+    date: '\d{1,2}\.\s?\d{1,2}\.\s?(?:\d{4}|\d{2})\b|\d{1,2}\.\s?(?:Januar|Jänner|Februar|Feber|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\s+\d{4}'
+    triggers:
+      - '\b(?:geboren|geb\.)\s+(?:am\s+)?'
+      - '\bGeburtsdatum\s*:?\s*'
+      - '\(\s?\*\s?'
+    year_triggers:
+      - '\b(?:Jahrgang|Jg\.)\s+'
+      - '\bgeboren\s+(?:im\s+(?:Jahr(?:e)?\s+)?)'
+
+  # Identifiers -> "***". `group` selects the capture group to replace.
+  # `context` (optional) must match within `window` characters before the hit.
+  ids:
+    - {name: email, pattern: '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', confidence: 0.99}
+    - {name: register_fl, pattern: '\bFL-\d{4}\.\d{3}\.\d{3}-\d\b', confidence: 0.99}
+    - {name: uid_ch, pattern: '\bCHE-\d{3}\.\d{3}\.\d{3}\b', confidence: 0.99}
+    - {name: ahv13, pattern: '\b756\.\d{4}\.\d{4}\.\d{2}\b', confidence: 0.99}
+    - {name: phone_intl, pattern: '(?<![\w+])(?:\+|00)(?:423|41|43|49)[\s()./-]*\d(?:[\s()./-]?\d){5,12}', confidence: 0.95}
+    - {name: phone_context, pattern: '(?:Tel\.?|Telefon(?:nummer)?|Mobil(?:e|nummer)?|Natel|Handy(?:nummer)?|Fax)\s*(?:Nr\.)?\s*:?\s*((?:\+|0)\d[\d\s()./-]{5,20}\d)', group: 1, confidence: 0.9}
+    - {name: ahv_context, pattern: '(?:AHV|AHV-IV|Sozialversicherungs|Versicherten)[\s-]*(?:Nr\.|Nummer)\s*:?\s*(\d[\d.\s]{5,20}\d)', group: 1, confidence: 0.9}
+    - {name: account_context, pattern: '(?:Konto|Kontonummer|Konto-Nr\.|Kto\.?|Depot(?:nummer)?|Depot-Nr\.|Portfolio(?:nummer)?|Portfolio-Nr\.|Kunden(?:nummer|-Nr\.)|Stamm(?:nummer|-Nr\.)|Policen(?:nummer|-Nr\.)|Vertrags(?:nummer|-Nr\.)|Kreditkarte(?:nnummer)?)\s*(?:Nr\.|Nummer)?\s*:?\s*([A-Z]{0,4}\d[\dA-Z.\s/-]{3,30}[\dA-Z])', group: 1, confidence: 0.85}
+    - {name: plate_fl, pattern: '\bFL[\s-]?\d{1,6}\b(?![./]\d)', confidence: 0.85}
+    - {name: plate_context, pattern: '\b[A-ZČĆŠŽ]{1,3}[\s-]?\d{1,6}(?:[\s-]?[A-Z]{1,3})?\b', context: '(?:Kontrollschild|Kennzeichen|Nummernschild|Fahrzeug|Fahrzeuges|Fahrzeugs|PKW|Pkw|LKW|Lkw|Motorrad|Lenker|Halter|Auto)', window: 80, confidence: 0.85}
+
+  # Persons are recognised after these patterns without NER, too.
+  max_name_tokens: 4

@@ -1,0 +1,28 @@
+# Generic street nouns: never treated as a street name unless followed by a
+# house number (then the address rule applies).
+Strasse
+Straße
+Landstrasse
+Hauptstrasse
+Gemeindestrasse
+Kantonsstrasse
+Staatsstrasse
+Landesstrasse
+Bundesstrasse
+Zufahrtsstrasse
+Erschliessungsstrasse
+Quartierstrasse
+Nebenstrasse
+Durchgangsstrasse
+Hauptverkehrsstrasse
+Sammelstrasse
+Privatstrasse
+Wohnstrasse
+Einbahnstrasse
+Autostrasse
+Ortsstrasse
+Gasse
+Seitengasse
+Sackgasse
+Verkehrsstrasse
+Gemeindegasse

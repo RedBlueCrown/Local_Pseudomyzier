@@ -1,0 +1,74 @@
+# Border region and common foreign places. Same format as places_li.txt.
+Buchs | Buchser
+Sevelen | Seveler
+Sennwald
+?Gams
+Grabs | Grabser
+Wartau
+Trübbach
+Azmoos
+?Haag
+Salez
+?Sax
+Frümsen
+Sargans | Sarganser
+Bad Ragaz
+?Mels
+Flums
+Walenstadt
+Altstätten
+Oberriet
+Rüthi
+Widnau
+Heerbrugg
+Diepoldsau
+St. Margrethen
+Rorschach
+St. Gallen
+Chur
+Landquart
+Maienfeld
+Fläsch
+Davos
+Klosters
+Zürich
+Winterthur
+Bern
+Basel
+Luzern
+Genf
+Lausanne
+Lugano
+Feldkirch | Feldkircher
+Rankweil
+Bludenz
+Dornbirn
+Bregenz
+Götzis
+Frastanz
+Nenzing
+Altach
+Hohenems
+Lustenau
+Lauterach
+Wolfurt
+Tisis
+Tosters
+Nofels
+Gisingen
+Altenstadt
+Satteins
+Schlins
+Schruns
+Innsbruck
+Salzburg
+Wien
+Graz
+Linz
+Klagenfurt
+Lindau
+Friedrichshafen
+Konstanz
+Ravensburg
+München
+Stuttgart

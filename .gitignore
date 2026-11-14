@@ -1,0 +1,16 @@
+# Sensitive test documents and model weights never go into git
+testdata/
+models/
+out/
+eval_out/
+*.entities.xlsx
+*.review.docx
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
