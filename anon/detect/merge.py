@@ -52,10 +52,16 @@ def apply_keep(candidates: list[Span], keeps: list[Span]) -> list[Span]:
                 else:
                     verdict = "drop"
             else:
+                heuristic = k.role in ("cited_author", "cited_case")
+                if heuristic and c.source in ("rubrum", "reviewer"):
+                    continue  # heuristic citation pattern never overrides the Rubrum structure
                 if c.contains(k) and not c.same_extent(k) and c.source not in ("ner", "llm"):
                     continue
-                if k.role == "cited_author" and c.source in ("rubrum", "reviewer"):
-                    continue  # heuristic citation pattern never overrides the Rubrum structure
+                if heuristic and c.source == "rescan" and c.kind in NAME_KINDS:
+                    # a known party name inside what looks like a citation: ask, do not guess
+                    if verdict != "drop":
+                        verdict, conflict_with = "cited", k
+                    continue
                 verdict = "drop"
             if verdict == "drop":
                 break
@@ -64,6 +70,9 @@ def apply_keep(candidates: list[Span], keeps: list[Span]) -> list[Span]:
         if verdict == "conflict":
             c.confidence = min(c.confidence, 0.3)
             c.meta["conflict"] = f"auch Name einer Gerichtsperson ({conflict_with.meta.get('person', '')})"
+        elif verdict == "cited":
+            c.confidence = min(c.confidence, 0.3)
+            c.meta["conflict"] = "steht in einem Zitat (Autor oder zitierte Entscheidung?)"
         out.append(c)
     return out
 

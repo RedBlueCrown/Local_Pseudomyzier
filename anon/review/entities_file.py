@@ -79,7 +79,8 @@ def write_entities(path: Path, entities: list[Entity]) -> None:
         ws.append([
             e.id, e.category, e.role or "", SEP.join(e.forms), e.replacement, e.decision, "",
             f"{len(e.mentions)} ({changes} Änderungen)", ", ".join(sorted(e.sources)), round(e.confidence, 2),
-            "; ".join(e.notes), e.replacement, e.decision, SEP.join(e.leak_terms), e.kind,
+            "; ".join(e.notes), e.replacement, e.decision,
+            SEP.join(t for t in e.sensitive_terms() if t not in e.forms), e.kind,
         ])
     widths = [7, 14, 16, 50, 12, 12, 18, 18, 18, 10, 30]
     for i, w in enumerate(widths):

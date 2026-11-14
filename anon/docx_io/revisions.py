@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from lxml import etree
 
 from .package import CT_COMMENTS, REL_COMMENTS, W_NS, XML_NS, DocxPackage, w
-from .reader import _RUN_CHARS, _RUN_OBJECTS, OBJECT, Document, Paragraph
+from .reader import _RUN_CHARS, _RUN_OBJECTS, OBJECT, Document, Paragraph, t_text
 
 BOOKMARK_CHANGE = "_anonR_"
 BOOKMARK_COMMENT = "_anonC_"
@@ -104,7 +104,7 @@ def _child_len(child: etree._Element) -> int:
     if not isinstance(tag, str):
         return 0
     if tag == w("t"):
-        return len(child.text or "")
+        return len(t_text(child))
     if tag in _RUN_CHARS or tag in _RUN_OBJECTS:
         return 1
     return 0
@@ -131,7 +131,7 @@ def _split_run(run: etree._Element, k: int) -> etree._Element:
             right.append(child)
         else:  # w:t straddling the cut
             cut = k - pos
-            text = child.text or ""
+            text = t_text(child)
             _set_text(child, text[:cut])
             new_t = etree.SubElement(right, w("t"))
             _set_text(new_t, text[cut:])
@@ -267,8 +267,8 @@ class RevisionWriter:
                 # never delete drawings/fields/footnote marks: downgrade to comment
                 e = Edit(e.part, e.para, e.start, e.end, None, e.author, None, e.item_id,
                          e.comment or "Enthält ein Objekt (Feld/Fussnote/Grafik); bitte manuell prüfen.")
-            if e.replacement is None and para.kind in ("header", "footer"):
-                self.skipped.append(e)  # Word does not support comments in headers/footers
+            if e.replacement is None and para.kind in ("header", "footer", "comments"):
+                self.skipped.append(e)  # no comments in headers/footers, none nested in comments
                 continue
             valid.append(e)
             last_end = e.end

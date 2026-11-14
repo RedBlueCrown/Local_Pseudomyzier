@@ -81,9 +81,19 @@ class Entity:
             self.forms.append(form)
 
     def sensitive_terms(self) -> list[str]:
+        """Everything the leak check must not find in the clean export."""
         out = list(self.forms)
-        if self.kind in ("person", "representative") and self.tokens and len(self.tokens) > 1:
+        if self.kind in ("person", "representative") and self.tokens:
             out.append(self.surname)
+            out.append(self.surname.split()[-1])
+        if self.kind == "id":
+            for f in self.forms:  # "+423 232 12 34" also as "+4232321234"
+                compact = re.sub(r"[\s./()-]", "", f)
+                if compact != f and len(compact) >= 6:
+                    out.append(compact)
+        if self.kind in ("person", "representative"):
+            out += [g for f in list(out) if not re.search(r"[&+]", f) for g in genitive_forms(f)]
+        out += [f.replace("ß", "ss") for f in out if "ß" in f]
         out += self.leak_terms
         return [t for t in dict.fromkeys(out) if len(t.strip()) >= 2]
 
@@ -205,9 +215,10 @@ class EntityBuilder:
         return [t for t in toks if t]
 
     def _person_candidates(self, surname: str) -> list[Entity]:
-        sn = surname.casefold()
+        """Entities with this surname; particles are ignored ("von Kaiser" ~ "Kaiser")."""
+        sn = surname.split()[-1].casefold() if surname else ""
         return [e for e in self.entities if e.kind in ("person", "representative") and e.tokens
-                and e.surname.casefold() == sn]
+                and e.surname.split()[-1].casefold() == sn]
 
     def _add_rep(self, s: Span) -> None:
         name = s.meta.get("name", s.text)

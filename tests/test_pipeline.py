@@ -65,8 +65,10 @@ def test_reject_all_reproduces_original_and_accept_all_matches_plan(tmp_path):
     # expected: apply the plan to the original strings (independent of the writer)
     expected = dict(orig_texts)
     by_para: dict = {}
+    kinds = {p.pid: p.kind for p in read_document(original).paragraphs}
     for m in analysis.mentions:
-        if m.change:
+        # header/footer items cannot carry comments: they are proposed as "Prüfen" changes
+        if m.change or kinds[m.span.key] in ("header", "footer"):
             by_para.setdefault(m.span.key, []).append(m)
     for key, ms in by_para.items():
         text = expected[key]
@@ -91,7 +93,7 @@ def test_review_copy_structure_is_valid(tmp_path):
     assert validate(pkg) == []
     # every tool revision has a category author and the deleted text sits in delText
     authors = {el.get(w("author")) for part, _ in pkg.story_parts() for el in pkg.xml(part).iter(w("ins"), w("del"))}
-    assert authors <= {"Partei", "Vertreter", "Ort", "Grundstück", "Datum/ID"}
+    assert authors <= {"Partei", "Vertreter", "Ort", "Grundstück", "Datum/ID", "Prüfen"}
     assert "Partei" in authors and "Grundstück" in authors
 
 
@@ -195,10 +197,20 @@ def test_policy_switches_representatives_birthdates_third_parties(tmp_path):
     assert "Rechtsanwalt Dr. B beantragte" in text
 
 
+def _resolve_comments(docx) -> bytes:
+    """What a reviewer does with 'Prüfen' comments that need no change."""
+    from anon.docx_io.finalize import remove_comments
+
+    pkg = DocxPackage.load(docx)
+    remove_comments(pkg, None)
+    return pkg.to_bytes()
+
+
 def test_metadata_stripped_and_leak_check(tmp_path):
     analysis, docx, xlsx, cfg = _review(tmp_path, decision_vgh())
     rows = read_entities(xlsx)
-    result = finalize(docx.read_bytes(), rows, cfg)
+    assert finalize(docx.read_bytes(), rows, cfg).data is None  # open "Prüfen" items block
+    result = finalize(_resolve_comments(docx), rows, cfg)
     assert result.data is not None, result.report.summary_lines()
     clean = DocxPackage.from_bytes(result.data)
     names = clean.names

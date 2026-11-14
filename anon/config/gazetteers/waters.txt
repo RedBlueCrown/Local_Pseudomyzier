@@ -1,0 +1,10 @@
+# Water bodies (rivers, streams, canals). "?" = ambiguous (also a common noun);
+# ambiguous names need a context ("Fliessgewässer", "zur", "Bach" ...).
+?Esche
+Binnenkanal
+Samina
+Saminabach
+Malbunbach
+Spirsbach
+Mölibach
+Gampriner Seele

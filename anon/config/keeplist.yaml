@@ -12,15 +12,16 @@ judges:
     - '\b(?:Vize)?[Pp]räsident(?:in|en|innen)?\b(?:\s+de[sr]\s+(?:Fürstlichen\s+)?(?:Staatsgerichtshof|Verwaltungsgerichtshof|Obergericht|Landgericht|Obersten\s+Gerichtshof|Gerichtshof|Senat)e?s?)?'
     - '\b[Vv]orsitz(?:es)?\s+(?:von|des|der)(?:\s+(?:Vize)?[Pp]räsident(?:in|en)?)?'
     - '\b(?:Senats|Kammer)?[Vv]orsitzende[rn]?\b'
-    - '\b(?:Ersatz|Ober|Land|Fach|Laien|Jugend|Verwaltungs|Einzel|Straf|Zivil)?[Rr]ichter(?:in|innen|Innen|:innen|\*innen|_innen|n|s)?\b(?:\s+de[sr]\s+(?:Fürstlichen\s+)?(?:Staatsgerichtshof|Verwaltungsgerichtshof|Obergericht|Landgericht|Obersten\s+Gerichtshof|Gerichtshof|Senat)e?s?)?'
+    - '\b(?:Ersatz|Oberst|Ober|Land|Fach|Laien|Jugend|Verwaltungs|Einzel|Straf|Zivil)?[Rr]ichter(?:in|innen|Innen|:innen|\*innen|_innen|n|s)?\b(?:\s+de[sr]\s+(?:Fürstlichen\s+)?(?:Staatsgerichtshof|Verwaltungsgerichtshof|Obergericht|Landgericht|Obersten\s+Gerichtshof|Gerichtshof|Senat)e?s?)?'
     - '\bBeisitzer(?:in|innen)?\b'
     - '\bHofr(?:at|ätin)\b'
   # Role named AFTER the names ("Dr. Marc Bauer als Richter; Daniela Kollerer
   # als Schriftführerin"). Names are read from the previous ; : or line start.
   postfix_roles:
-    judge: '\bals\s+(?:stellvertretende[rn]?\s+|weitere[sn]?\s+)?(?:Vorsitzende[rn]?|(?:Vize)?[Pp]räsident(?:in)?|(?:Ersatz)?[Rr]ichter(?:in|innen)?|Beisitzer(?:in|innen)?|(?:Senats|Kammer)?[Mm]itglied(?:er)?)\b'
+    judge: '\bals\s+(?:stellvertretende[rn]?\s+|weitere[sn]?\s+)?(?:Vorsitzende[rn]?|(?:Vize)?[Pp]räsident(?:in)?|(?:Ersatz|Oberst|Ober)?[Rr]ichter(?:in|innen)?|Beisitzer(?:in|innen)?|(?:Senats|Kammer)?[Mm]itglied(?:er)?)\b'
     clerk: '\bals\s+(?:Schriftf(?:ü|ue)hrer(?:in)?|Protokollf(?:ü|ue)hrer(?:in)?|Gerichtsschreiber(?:in)?)\b'
   clerk_triggers:
+    - '\bFür\s+die\s+Richtigkeit\s+der\s+Ausfertigung\b'
     - '\bSchriftf(?:ü|ue)hrer(?:in|s)?\b'
     - '\bProtokollf(?:ü|ue)hrer(?:in|s)?\b'
     - '\bGerichtsschreiber(?:in|s)?\b'
@@ -43,16 +44,26 @@ citations:
   - '\b(?:Nr\.|no\.|No\.|Appl\.|Beschwerde-?Nr\.)\s*\d{2,6}/\d{2}\b'
   - '\bECLI:[A-Z]{2}:[A-Z]+:\d{4}:[\w.]+'
 
+# Publication places in literature citations ("3. Auflage, Zürich 2021"), EU
+# instruments named after cities ("Rom I", "Brüssel Ia"), court seats.
+publication_places:
+  - '\b(?:Zürich|Bern|Basel|Wien|Berlin|München|Tübingen|Baden-Baden|Köln|Frankfurt(?:\s+am\s+Main)?|St\.\s?Gallen|Genf|Lausanne|Heidelberg|Graz|Innsbruck|Salzburg|Linz|Bendern|Schaan|Vaduz|Luzern|Freiburg|Leipzig|Hamburg|Stuttgart|Bielefeld|Göttingen|Neuwied|Paris|London|Oxford|Cambridge|Den\s+Haag|Luxemburg|Strassburg|Dike|Helbing|Manz)(?:\s*/\s*[A-ZÄÖÜ][\w.-]+)*\s+(?:19|20)\d{2}\b'
+  - '\b(?:Rom|Brüssel)\s+(?:I{1,3}a?|IV)(?:-VO|-Verordnung)?\b'
+  - '\b(?:Lugano|Haager|Wiener|Genfer|New\s+Yorker)[\s-]+(?:Übereinkommen|Konvention|Abkommen|Protokoll)\b'
+
 # Names in cited court decisions ("Kaiser v. Liechtenstein", "Müller gegen Schweiz").
 cited_case_names:
+  # "Abuelo Insua Juan Bautista v Liechtensteinische Invalidenversicherung" (bare v between names)
+  - '\b(?:[A-ZÄÖÜ][\w''-]+\s+){0,4}[A-ZÄÖÜ][\w''-]+\s+v\.?\s+(?:the\s+)?(?:[A-ZÄÖÜ][\w''-]+(?:\s+|$)){1,4}'
   - '\b[A-ZÄÖÜ][\w''-]+(?:\s(?:und|and|&)\s[A-ZÄÖÜ][\w''-]+)?(?:\s(?:und\s+andere|and\s+Others|et\s+autres|u\.\s?a\.))?\s(?:v\.|vs\.|c\.|gegen|against)\s(?:the\s)?(?:Liechtenstein|Österreich|Austria|Schweiz|Switzerland|Deutschland|Germany|Frankreich|France|Italien|Italy|Spanien|Spain|Portugal|Polen|Poland|Russland|Russia|Türkei|Turkey|Vereinigte[sn]?\s+Königreich|United\s+Kingdom|Belgien|Belgium|Niederlande|Netherlands|Griechenland|Greece|Rumänien|Romania|Ungarn|Hungary|Kroatien|Croatia|Slowenien|Slovenia|Tschechien|Czech\s+Republic|Slowakei|Slovakia|Norwegen|Norway|Island|Iceland|Schweden|Sweden|Finnland|Finland|Dänemark|Denmark|Irland|Ireland|Luxemburg|Luxembourg|Malta|Zypern|Cyprus|Bulgarien|Bulgaria|Ukraine|Serbien|Serbia|Albanien|Albania|Montenegro|San\s+Marino|Monaco|Andorra|Lettland|Latvia|Litauen|Lithuania|Estland|Estonia|EFTA-Überwachungsbehörde|ESA|Kommission|Commission|Rat|Council)\b'
 
 # Cited authors ("vgl. Kley/Vogt, Grundrechtspraxis, Rz 12"; "Hangartner, in: ...").
 cited_authors:
-  - '\b[A-ZÄÖÜ][\w''-]+(?:/[A-ZÄÖÜ][\w''-]+)+\b'
+  # author lists "Kley/Vogt", "Pierre Tschannen/Markus Müller/ Markus Kern, Titel"
+  - '\b(?:[A-ZÄÖÜ][\w''-]+\.?\s+){0,2}[A-ZÄÖÜ][\w''-]+(?:\s*/\s*(?:[A-ZÄÖÜ][\w''-]+\.?\s+){0,2}[A-ZÄÖÜ][\w''-]+)+\b(?=\s*(?:,|\(|in:|\bin\b|\)))'
   - '\b[A-ZÄÖÜ][\w''-]+(?=,?\s+in:\s)'
   - '\b[A-ZÄÖÜ][\w''-]+(?=\s+in\s+[A-ZÄÖÜ][\w''-]+(?:/[A-ZÄÖÜ][\w''-]+)*\s*(?:\(Hrsg\.\)|,))'
-  - '\b[A-ZÄÖÜ][\w''-]+(?=,\s[^,.;\n\d]{3,90},\s(?:\d+\.\s)?(?:Aufl\.|Auflage|Rz\.?|Rn\.?|N\.?\s?\d|S\.\s?\d|(?:19|20)\d{2}(?!\s+[A-ZÄÖÜ])))'
+  - '\b(?:[A-ZÄÖÜ][\w''-]+\.?\s+){0,2}[A-ZÄÖÜ][\w''-]+(?=,\s[^,.;\n\d]{3,90},\s(?:\d+\.?\s)?(?:Aufl\.|Auflage|Rz\.?|Rn\.?|N\.?\s?\d|S\.\s?\d|(?:19|20)\d{2}(?!\s+[A-ZÄÖÜ])))'
   - '\b(?:vgl\.|siehe|so|ebenso|ähnlich|gl\.M\.|aA|a\.A\.|mwN|m\.w\.N\.)\s+[A-ZÄÖÜ][\w''-]+(?=,\s)'
 
 # Authorities that are a party or whose decision is appealed.
@@ -76,6 +87,13 @@ authorities:
   - 'Schlichtungsstelle'
   - 'Liechtensteinische\s+Landesverwaltung'
   - 'Fürstentum\s+Liechtenstein'
+  - '(?:Liechtensteinische[nr]?\s+)?Invalidenversicherung'
+  - '(?:Liechtensteinische[nr]?\s+)?(?:Alters-\s+und\s+Hinterlassenenversicherung|Familienausgleichskasse|Pensionsversicherung\s+für\s+das\s+Staatspersonal)'
+  - 'Liechtensteinische[nr]?\s+Staatsanwaltschaft'
+  - 'Staatsgerichtshofkanzlei'
+  - 'Land\s+Liechtenstein'
+  # an authority or court with its seat: "Fürstliches Landgericht, Abteilung 8, Vaduz"
+  - '(?:(?:Fürstliche[sr]?\s+)?(?:Landgericht|Obergericht|Oberste[rn]?\s+Gerichtshof(?:\s+als\s+Verwaltungsgerichtshof)?)|Staatsgerichtshof|Verwaltungsgerichtshof|Staatsanwaltschaft|Regierung|Beschwerdekommission\s+für\s+Verwaltungsangelegenheiten|Amt\s+für\s+[A-ZÄÖÜ][\w-]+(?:\s+und\s+[A-ZÄÖÜ][\w-]+)?|Landespolizei|Steuerverwaltung)(?:,\s+[^,;\n]{1,40}?)?,\s+(?:Vaduz|Schaan)\b'
 
 # Place names inside these are kept when policy.keep_municipal_authorities is true.
 municipal_authority_prefixes:

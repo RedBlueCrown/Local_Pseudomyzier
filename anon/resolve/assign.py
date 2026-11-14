@@ -114,7 +114,7 @@ def _mention_replacement(e: Entity, m: Mention, cfg: Config) -> tuple[str, Span]
             base = f"{base} {e.activity}"
         return base, span
     if e.kind == "birthdate" and cfg.policy.get("birth_dates") == "generalise" and not span.meta.get("year_only") \
-            and not e.replacement_locked:
+            and not e.replacement_locked and "generalise_from" in span.meta:  # only in a birth context
         gen = generalised_birthdate(span.text, cfg.policy["birth_date_generalise_template"])
         start = span.meta.get("generalise_from", span.start)
         if gen:

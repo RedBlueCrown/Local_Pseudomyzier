@@ -17,10 +17,10 @@ from .detect.merge import apply_keep, resolve_overlaps
 from .detect.ner import NerDetector
 from .detect.rubrum import RubrumParser
 from .detect.rules import RuleDetector
-from .detect.span import Span
+from .detect.span import KEEP_KIND, Span
 from .docx_io.finalize import (
-    accept_all_parts, pending_tool_changes, remove_comments, remove_summary, remove_tool_bookmarks,
-    strip_metadata, strip_tool_highlights, tool_comment_states, tool_ranges,
+    accept_all_parts, remove_comments, remove_summary, remove_tool_bookmarks, strip_metadata,
+    strip_tool_highlights, tool_comment_states, tool_item_states, tool_ranges,
 )
 from .docx_io.package import DocxPackage
 from .docx_io.reader import Document, read_document
@@ -109,7 +109,9 @@ def analyse(data: bytes, cfg: Config, *, use_ner: bool = True, ner: NerDetector 
     keep = KeepList(cfg)
     people, keep_spans = keep.detect(doc)
     rules = RuleDetector(cfg)
-    candidates: list[Span] = RubrumParser(cfg, keep, rules).parse(doc) + rules.detect(doc)
+    rubrum = RubrumParser(cfg, keep, rules).parse(doc)
+    keep_spans += [s for s in rubrum if s.kind == KEEP_KIND]
+    candidates: list[Span] = [s for s in rubrum if s.kind != KEEP_KIND] + rules.detect(doc)
     stats = {"paragraphs": len(doc.paragraphs), "judges_clerks": len(people)}
     if use_ner:
         ner = ner or NerDetector.from_config(cfg)
@@ -182,9 +184,14 @@ def build_edits(analysis: Analysis, cfg: Config) -> list[Edit]:
         category = cat[s.meta["entity"]]
         if s.kind == "address_tail" or (s.kind == "address" and m.replacement == ""):
             category = "place"
+        kind = analysis.doc.get(s.part, s.para).kind
         if m.change:
             edits.append(Edit(s.part, s.para, s.start, s.end, m.replacement, cfg.author(category),
                               cfg.highlight(category), m.item_id))
+        elif kind in ("header", "footer"):
+            # Word allows no comments in headers/footers: propose as a change by "Prüfen"
+            edits.append(Edit(s.part, s.para, s.start, s.end, m.replacement, cfg.author("review"), None,
+                              m.item_id))
         else:
             edits.append(Edit(s.part, s.para, s.start, s.end, None, cfg.author("review"), None, m.item_id,
                               comment=m.comment))
@@ -266,8 +273,8 @@ def finalize(review_bytes: bytes, rows: list[EntityRow], cfg: Config) -> Finaliz
     pkg = DocxPackage.from_bytes(review_bytes)
     tool_authors = cfg.tool_authors
     states = tool_comment_states(pkg)
-    pending = pending_tool_changes(pkg, tool_authors)
-    stats = {"pending_changes_accepted": len(pending)}
+    items = tool_item_states(pkg, tool_authors)
+    stats = {"pending_changes_accepted": len(items)}
     stats["revisions_accepted"] = accept_all_parts(pkg)
     stats["summary_removed"] = remove_summary(pkg)
     remove_all = cfg.rules.get("finalize", {}).get("remove_all_comments", True)
@@ -290,8 +297,30 @@ def finalize(review_bytes: bytes, rows: list[EntityRow], cfg: Config) -> Finaliz
     doc = read_document(pkg)
     ranges = tool_ranges(doc)
     _, keep_spans = KeepList(cfg).detect(doc)
-    report = check(pkg, doc, terms, ranges, pending, states, keep_spans)
+    report = check(pkg, doc, terms, ranges, items, states, keep_spans, _valid_replacements(rows, cfg))
     if not report.ok:
         return FinalizeResult(None, report, stats)
     remove_tool_bookmarks(pkg)
-    return FinalizeResult(pkg.to_bytes(), report, stats)
+    out = pkg.to_bytes()
+    problems = validate(DocxPackage.from_bytes(out))
+    if problems:
+        report.problems.extend(f"Struktur: {p}" for p in problems[:10])
+        return FinalizeResult(None, report, stats)
+    return FinalizeResult(out, report, stats)
+
+
+def _valid_replacements(rows: list[EntityRow], cfg: Config) -> set[str]:
+    """Texts the tool may have inserted (to detect edited insertions)."""
+    out = {cfg.stars}
+    for row in rows:
+        r = row.replacement or row.tool_replacement
+        if not r:
+            continue
+        out |= {r, r + "s"}
+        for word in cfg.detect.get("company_activity_words", []):
+            out.add(f"{r} {word}")
+    for year in range(1890, 2101):
+        out.add(cfg.policy.get("birth_date_generalise_template", "vor dem Jahr {year_bound}")
+                .format(year_bound=year, year=year - 1))
+    out |= {str(n) for n in range(0, 10000)}
+    return out

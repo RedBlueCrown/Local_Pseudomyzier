@@ -4,7 +4,8 @@
 # Python syntax and run on a *normalised* copy of each paragraph:
 #   - non-breaking / narrow spaces  -> " "
 #   - typographic quotes  „ “ ” « »  -> "      ‚ ‘ ’ ‹ ›  -> '
-#   - dashes  – — ‑ ‐ −  -> "-"
+#   - hyphens ‑ ‐ − -> "-"; en/em dashes – — -> "–" (a word separator)
+#   - decomposed letters are composed (NFC); zero-width spaces -> " "
 #   - soft hyphens and zero-width characters are removed
 # The original characters in the document are never changed by normalisation.
 #
@@ -33,13 +34,15 @@ policy:
   representatives: stars
   # Birth dates: stars | generalise
   birth_dates: stars
-  # Used when birth_dates = generalise. {year_bound} = first year of the next
-  # decade + 1 (1990 -> 2001), matching "geboren vor dem Jahr 2001".
+  # Used when birth_dates = generalise. {year_bound} = birth year + 1
+  # (guideline 2.3: "geboren am 10.08.2000" -> "geboren vor dem Jahr 2001").
   birth_date_generalise_template: "vor dem Jahr {year_bound}"
   # Muster Bank AG -> "A AG" (false) or "A Bank AG" (true)
   company_keep_activity: false
-  # Municipal authorities that are a party ("Gemeinde Vaduz") stay unchanged.
-  keep_municipal_authorities: true
+  # "Gemeinde Vaduz" is anonymised as a place (gold files: "Gemeinde ***").
+  # A municipality that is a party in the Rubrum is kept automatically.
+  # true = keep every "Gemeinde <Ort>" phrase.
+  keep_municipal_authorities: false
   stars: "***"
   plot_start: 1
   # Letters never handed out (e.g. ["I", "O"]); empty = full alphabet.
@@ -141,6 +144,22 @@ detect:
       - 'Erblasser(?:in)?'
       - 'Kurand(?:in)?'
       - 'Partei(?:en)?'
+      - '(?:Interessierte|Beteiligte|Weitere)\s+Parteie?n?'
+    # Labels whose content is only a party if it looks like a name
+    # ("betreffend:  Mario Bezo, geboren am ..." vs "betreffend: Baubewilligung").
+    weak_party_labels:
+      - 'betreffend'
+      - 'in\s+Sachen'
+    # Authorities in the Rubrum: kept unchanged, including their address.
+    authority_labels:
+      - 'Belangte\s+Behörde'
+      - 'Vorinstanz'
+    # Further lines of a party block that are deleted with the address.
+    block_extra_lines:
+      - '^\s*(?:Rechtsanw(?:alt|ältin)|Treuhänder(?:in)?|Notar(?:in)?|Wirtschaftsprüfer(?:in)?|Steuerberater(?:in)?|Rechtsagent(?:in)?)\s*,?\s*$'
+      - '^\s*(?:dzt\.|derzeit|c/o|p\.\s?A\.|z\.\s?H\.|Postfach)\b'
+      - '^\s*(?:Justizanstalt|Landesgefängnis|Strafanstalt|Haftanstalt)\b'
+      - '^\s*[a-zäöü]+e[rn]?\s+Staatsangehörige[rn]?\b'
     representative_labels:
       - 'vertreten\s+durch'
       - 'vertr\.\s*d\.'
@@ -150,7 +169,7 @@ detect:
       - 'Zustellungsbevollm(?:ä|ae)chtigte[rn]?'
     # A party block ends at a line starting with one of these.
     block_terminators:
-      - '^(?:gegen|wider|wegen|betreffend|betr\.|in\s+Sachen|über|hat|haben|wird|werden|der|die|das|den|dem|des)\b'
+      - '^(?:gegen|wider|wegen|betreffend|betr\.|in\s+Sachen|über|hat|haben|wird|werden|der|die|das|den|dem|des|Belangte|zu\s+Recht|beschlossen)\b'
     # Lines continuing a party block are treated as address if they look like one.
     address_line_hints:
       - '\d'
@@ -196,7 +215,7 @@ detect:
     - 'MLaw'
     - 'BLaw'
     - 'LL\.M\.'
-    - 'M\.A\.'
+    - 'M\.\s?A\.'
     - 'MBA'
     - 'MSc'
     - 'BSc'
@@ -252,6 +271,11 @@ detect:
   # Words kept with company_keep_activity: true ("Muster Bank AG" -> "A Bank AG")
   company_activity_words: [Bank, Privatbank, Treuhand, Immobilien, Bau, Holding, Invest, Investment, Versicherung, Versicherungen, Consulting, Trading, Management, Verwaltung, Vermögensverwaltung, Capital, Finanz, Finance, Handel, Transport, Logistik, Garage, Elektro, Sanitär, Architektur, Hotel, Restaurant, Software, Media, Marketing, Services, Pharma, Medical, Energie, Industrie, Technik, Engineering, Group, Gruppe, Partners]
 
+  # A capitalised word after these nouns is a place ("Krankenhaus Urm",
+  # "Gemeindegericht in Zagreb", "Justizanstalt Feldkirch").
+  place_context_nouns: '(?:Krankenhaus|Spital|Klinik|Klinikum|Psychiatrie|Kantonsspital|Landesspital|Universitätsspital|Justizanstalt|Gefängnis|Strafanstalt|Gemeindegericht|Bezirksgericht|Amtsgericht|Kreisgericht|Landesgericht|Stadt|Ortschaft|Dorf)(?:es|s)?(?:\s+(?:von|in|zu))?'
+  # Places used as field context ("Feldweg Riet", "Gebiet Riet").
+  field_context_nouns: '(?:Gebiet|Flur|Flurname|Flurbezeichnung|Ortsteil|Ortsbezeichnung|Weiler|Quartier|Lokalität|Örtlichkeit|Lage|Gebietsbezeichnung|Riedgebiet|Alp|Maiensäss|Rüfe|Feldweg|Flurweg|Güterweg|Wanderweg|Weg|Fliessgewässer|Gewässer|Bach|Kanal|Graben)'
   streets:
     suffixes: ['strasse', 'straße', 'str\.', 'gasse', 'weg', 'platz', 'allee', 'ring', 'halde', 'rain', 'bühel', 'gässle', 'gässli', 'strässle', 'promenade', 'quai', 'steig', 'zeile', 'damm', 'ufer', 'hof', 'park']
     # Unnumbered street names are only suggested (comment) for these suffixes.
@@ -263,13 +287,14 @@ detect:
     # FL postcodes are recognised anywhere when followed by a place name.
     fl: '94(?:8[5-9]|9[0-8])'
     # Foreign postcodes need a country prefix (CH-9470) or an address context.
-    foreign_prefixes: ['CH', 'A', 'AT', 'D', 'DE', 'I', 'F']
+    # Country prefixes before foreign postcodes ("CH-9470 Buchs", "SVN-2250 Ptuj").
+    foreign_prefixes: ['CH', 'A', 'AT', 'D', 'DE', 'I', 'IT', 'F', 'FR', 'SLO', 'SVN', 'SI', 'HR', 'BIH', 'BA', 'SRB', 'RS', 'MNE', 'MK', 'AL', 'RKS', 'TR', 'PL', 'CZ', 'SK', 'H', 'HU', 'RO', 'BG', 'NL', 'B', 'L', 'E', 'ES', 'P', 'PT', 'GB', 'UK', 'DK', 'S', 'N', 'FIN', 'GR']
 
   plots:
-    prefix: '(?:Grundst(?:ü|ue)ck(?:e|en|s|es)?|Parzelle(?:n)?|Parz\.|Gst\.?|GB-?Nr\.?|Grundbuchnummer|Grundbuchbl(?:att|\.)|Liegenschaft(?:en)?|Stockwerkeigentumseinheit(?:en)?|StWE(?:-Einheit(?:en)?)?|Baurechtsgrundst(?:ü|ue)ck(?:e|en|s)?|Teilfl(?:ä|ae)che\s+(?:des|von)\s+Grundst(?:ü|ue)ck(?:s|es)?)'
+    prefix: '(?:[A-ZÄÖÜ][a-zäöü]+?grundst(?:ü|ue)ck(?:e|en|s|es)?|Grundst(?:ü|ue)ck(?:e|en|s|es)?|Parzelle(?:n)?|Parz\.|Gst\.?|GB-?Nr\.?|Grundbuchnummer|Grundbuchbl(?:att|\.)|Liegenschaft(?:en)?|Stockwerkeigentumseinheit(?:en)?|StWE(?:-Einheit(?:en)?)?|Baurechtsgrundst(?:ü|ue)ck(?:e|en|s)?|Teilfl(?:ä|ae)che\s+(?:des|von)\s+Grundst(?:ü|ue)ck(?:s|es)?)'
     number_word: '(?:Nr\.|Nrn\.|Nummer(?:n)?|No\.)'
-    number: '\d{1,6}[a-z]?'
-    separators: '(?:,|/|und|sowie|bzw\.|oder|-|bis)'
+    number: '\d{1,6}[a-z]?(?![''.,]\d)(?!\s?(?:m2|m3|m²|m³|ha\b|km|%|Prozent|CHF|Fr\.|EUR|Franken|Jahre))'
+    separators: '(?:,|/|und|sowie|bzw\.|oder|-|–|bis)'
 
   birthdates:
     date: '\d{1,2}\.\s?\d{1,2}\.\s?(?:\d{4}|\d{2})\b|\d{1,2}\.\s?(?:Januar|Jänner|Februar|Feber|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\s+\d{4}'
@@ -277,6 +302,9 @@ detect:
       - '\b(?:geboren|geb\.)\s+(?:am\s+)?'
       - '\bGeburtsdatum\s*:?\s*'
       - '\(\s?\*\s?'
+    # date BEFORE the trigger: "Dem am 10.10.1990 geborenen Versicherten"
+    trailing_triggers:
+      - '\s+geboren(?:e|en|er|es)?\b'
     year_triggers:
       - '\b(?:Jahrgang|Jg\.)\s+'
       - '\bgeboren\s+(?:im\s+(?:Jahr(?:e)?\s+)?)'
@@ -292,6 +320,7 @@ detect:
     - {name: phone_context, pattern: '(?:Tel\.?|Telefon(?:nummer)?|Mobil(?:e|nummer)?|Natel|Handy(?:nummer)?|Fax)\s*(?:Nr\.)?\s*:?\s*((?:\+|0)\d[\d\s()./-]{5,20}\d)', group: 1, confidence: 0.9}
     - {name: ahv_context, pattern: '(?:AHV|AHV-IV|Sozialversicherungs|Versicherten)[\s-]*(?:Nr\.|Nummer)\s*:?\s*(\d[\d.\s]{5,20}\d)', group: 1, confidence: 0.9}
     - {name: account_context, pattern: '(?:Konto|Kontonummer|Konto-Nr\.|Kto\.?|Depot(?:nummer)?|Depot-Nr\.|Portfolio(?:nummer)?|Portfolio-Nr\.|Kunden(?:nummer|-Nr\.)|Stamm(?:nummer|-Nr\.)|Policen(?:nummer|-Nr\.)|Vertrags(?:nummer|-Nr\.)|Kreditkarte(?:nnummer)?)\s*(?:Nr\.|Nummer)?\s*:?\s*([A-Z]{0,4}\d[\dA-Z.\s/-]{3,30}[\dA-Z])', group: 1, confidence: 0.85}
+    - {name: plan_number, pattern: '(?:Plan|Projekt|Gesuchs|Bewilligungs|Dossier)(?:-|\s)?(?:Nr\.|Nummer)\s*:?\s*(\d[\d-]{5,}\d)', group: 1, confidence: 0.85}
     - {name: plate_fl, pattern: '\bFL[\s-]?\d{1,6}\b(?![./]\d)', confidence: 0.85}
     - {name: plate_context, pattern: '\b[A-ZČĆŠŽ]{1,3}[\s-]?\d{1,6}(?:[\s-]?[A-Z]{1,3})?\b', context: '(?:Kontrollschild|Kennzeichen|Nummernschild|Fahrzeug|Fahrzeuges|Fahrzeugs|PKW|Pkw|LKW|Lkw|Motorrad|Lenker|Halter|Auto)', window: 80, confidence: 0.85}
 

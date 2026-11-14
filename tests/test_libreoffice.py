@@ -39,8 +39,13 @@ def test_libreoffice_accept_reject_and_pdf(tmp_path):
     src = tmp_path / "VGH.docx"
     src.write_bytes(decision_vgh())
     _, docx, xlsx = review(src, cfg, tmp_path / "out", use_ner=False)
-    result = finalize(docx.read_bytes(), read_entities(xlsx), cfg)
-    assert result.data is not None
+    from anon.docx_io.finalize import remove_comments
+    from anon.docx_io.package import DocxPackage
+
+    reviewed = DocxPackage.load(docx)
+    remove_comments(reviewed, None)  # reviewer: open "Prüfen" items need no change
+    result = finalize(reviewed.to_bytes(), read_entities(xlsx), cfg)
+    assert result.data is not None, result.report.summary_lines()
     clean = tmp_path / "clean.docx"
     clean.write_bytes(result.data)
 
@@ -53,7 +58,7 @@ def test_libreoffice_accept_reject_and_pdf(tmp_path):
     orig, rev, cln = data[str(src)], data[str(docx)], data[str(clean)]
 
     authors = {a for a, _ in rev["redlines"]}
-    assert authors <= {"Partei", "Vertreter", "Ort", "Grundstück", "Datum/ID"}
+    assert authors <= {"Partei", "Vertreter", "Ort", "Grundstück", "Datum/ID", "Prüfen"}
     assert {"Partei", "Grundstück", "Ort"} <= authors
     first = orig["loaded"].splitlines()[0]
     rejected = rev["reject"][rev["reject"].index(first):]  # drop the summary block

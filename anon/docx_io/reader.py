@@ -17,6 +17,7 @@ Text conventions (identical for original and review copy, so texts compare):
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass, field
 
 from lxml import etree
@@ -85,7 +86,8 @@ class Paragraph:
     segments: list[Segment]
     markers: list[Marker]
     norm: str = ""
-    norm_map: list[int] = field(default_factory=list)  # norm index -> orig index (len(norm)+1)
+    norm_map: list[int] = field(default_factory=list)  # norm index -> orig start (len(norm)+1)
+    norm_end: list[int] = field(default_factory=list)  # norm index -> orig end
     anchor: tuple = ()
 
     @property
@@ -97,7 +99,7 @@ class Paragraph:
         if ne <= ns:
             o = self.norm_map[ns]
             return o, o
-        return self.norm_map[ns], self.norm_map[ne - 1] + 1
+        return self.norm_map[ns], self.norm_end[ne - 1]
 
     def order_key(self, offset: int) -> tuple:
         """Reading-order key of a character in this paragraph."""
@@ -124,29 +126,61 @@ class Paragraph:
 # ---------------------------------------------------------------------------
 # Normalisation for matching only
 # ---------------------------------------------------------------------------
-_REMOVE = {"­", "​", "‌", "‍", "⁠", "﻿"}
+# soft hyphen and joiners sit inside words: removed. A zero-width SPACE
+# separates words: mapped to a space. En/em dashes are kept as "–" (they
+# separate words: "Antrag—so Kaiser—sei"); real hyphens become "-".
+_REMOVE = {"\u00ad", "\u200c", "\u200d", "\u2060", "\ufeff"}
 _MAP = {
-    **{c: " " for c in "           "},
-    **{c: "-" for c in "‐‑‒–—−"},
-    **{c: '"' for c in "„“”«»″"},
-    **{c: "'" for c in "‚‘’‹›′"},
+    **{c: " " for c in "\u00a0\u202f\u2007\u2009\u2002\u2003\u2004\u2005\u2006\u2008\u200a\u200b"},
+    **{c: "-" for c in "\u2010\u2011\u2012\u2212"},
+    **{c: "\u2013" for c in "\u2013\u2014\u2015"},
+    **{c: '"' for c in "\u201e\u201c\u201d\u00ab\u00bb\u2033"},
+    **{c: "'" for c in "\u201a\u2018\u2019\u2039\u203a\u2032"},
 }
 
 
-def normalise(text: str) -> tuple[str, list[int]]:
+def normalise(text: str) -> tuple[str, list[int], list[int]]:
+    """Matching copy of `text` plus, for every normalised character, the
+    [start, end) range of original characters it stands for. Decomposed
+    letters (u + combining diaeresis) are composed (NFC), so the mark is
+    always inside a span that covers its base letter."""
     out: list[str] = []
-    mapping: list[int] = []
+    starts: list[int] = []
+    ends: list[int] = []
     for i, ch in enumerate(text):
         if ch in _REMOVE:
             continue
+        if out and unicodedata.combining(ch):
+            composed = unicodedata.normalize("NFC", out[-1] + ch)
+            if len(composed) == 1:
+                out[-1] = composed
+            ends[-1] = i + 1
+            continue
         out.append(_MAP.get(ch, ch))
-        mapping.append(i)
-    mapping.append(len(text))
-    return "".join(out), mapping
+        starts.append(i)
+        ends.append(i + 1)
+    starts.append(len(text))
+    return "".join(out), starts, ends
 
 
 def normalise_simple(text: str) -> str:
     return normalise(text)[0]
+
+
+XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
+
+
+def t_text(el: etree._Element) -> str:
+    """Text of a w:t as Word shows it: without xml:space="preserve" leading
+    and trailing whitespace is not displayed."""
+    text = el.text or ""
+    if el.get(XML_SPACE) == "preserve":
+        return text
+    for anc in el.iterancestors():
+        val = anc.get(XML_SPACE)
+        if val is not None:
+            return text if val == "preserve" else text.strip(" \t\r\n")
+    return text.strip(" \t\r\n")
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +192,7 @@ def _run_segments(run: etree._Element, pos: int, segs: list[Segment], buf: list[
         if not isinstance(tag, str):
             continue
         if tag in _RUN_TEXT:
-            text = child.text or ""
+            text = t_text(child)
             if text:
                 segs.append(Segment(pos, pos + len(text), run, child, "text"))
                 buf.append(text)
@@ -206,8 +240,8 @@ def extract_paragraph(p: etree._Element, part: str, kind: str, index: int) -> Pa
     buf: list[str] = []
     _walk(p, 0, segs, markers, buf)
     text = "".join(buf)
-    norm, mapping = normalise(text)
-    return Paragraph(part, kind, index, p, text, segs, markers, norm, mapping)
+    norm, starts, ends = normalise(text)
+    return Paragraph(part, kind, index, p, text, segs, markers, norm, starts, ends)
 
 
 def paragraph_text(p: etree._Element) -> str:

@@ -24,10 +24,11 @@ from ..config import Config
 from ..docx_io.reader import Document, Paragraph
 from .keeplist import KeepList
 from .rules import RuleDetector
-from .span import Span
+from .span import KEEP_KIND, Span
 from .text import compile_list, titles_regex
 
-_NUMBERING = re.compile(r"^[ \t]*(?:\d{1,2}[.)]|[a-z]\)|[IVX]+\.)[ \t]+")
+# no "^": used with .match(text, pos), which anchors at pos ("^" would not)
+_NUMBERING = re.compile(r"[ \t]*(?:\d{1,2}[.)]|[a-z]\)|[IVX]+\.)[ \t]+")
 _TRAIL = " \t,;.:"
 
 
@@ -50,8 +51,15 @@ class RubrumParser:
         rb = cfg.detect["rubrum"]
         labels = "|".join(rb["party_labels"])
         self.party_label = re.compile(
-            rf"^[ \t]*(?:\d+\.[ \t]*)?(?:{labels})(?:[ \t]*(?:\d+|[IVX]+))?[ \t]*(?::|\t|$)[ \t]*"
+            rf"^[ \t]*(?:\d+\.[ \t]*)?(?:{labels})(?:[ \t]*/[ \t]*(?:{labels})?)?(?:[ \t]*(?:\d+|[IVX]+))?"
+            rf"[ \t]*(?::|\t|$)[ \t]*"
         )
+        weak = "|".join(rb.get("weak_party_labels", [])) or "(?!x)x"
+        self.weak_label = re.compile(rf"^[ \t]*(?:{weak})[ \t]*:[ \t]*")
+        auth = "|".join(rb.get("authority_labels", [])) or "(?!x)x"
+        self.authority_label = re.compile(rf"^[ \t]*(?:{auth})[ \t]*:?[ \t]*")
+        self.extra_lines = compile_list(rb.get("block_extra_lines", []))
+        self.address_only = re.compile(r"^[ \t]*(?:[A-Z]{1,3}-)?\d{4,5}[ \t]+\S")
         loose = "|".join(r for r in rb["representative_labels"] if r.startswith("vertr"))
         strict = "|".join(r for r in rb["representative_labels"] if not r.startswith("vertr")) or "(?!x)x"
         self.rep_label = re.compile(
@@ -95,6 +103,24 @@ class RubrumParser:
         s, e = para.to_orig(ns, ne)
         return Span(para.part, para.index, s, e, para.text[s:e], kind, "rubrum", conf, role, meta)
 
+    def _keep(self, para: Paragraph, ns: int, ne: int) -> Span:
+        s, e = para.to_orig(ns, ne)
+        return Span(para.part, para.index, s, e, para.text[s:e], KEEP_KIND, "keep", 1.0, "authority",
+                    {"strength": "strong"})
+
+    def _name_like(self, text: str) -> bool:
+        """Content after a weak label is a party only if it looks like a name."""
+        head = re.split(r"[,(;]", text.strip(), maxsplit=1)[0].strip()
+        head = self.titles.sub("", head).strip()
+        toks = head.split()
+        if not toks or len(toks) > 6:
+            return False
+        if self.legal_end.search(head) or toks[0] in self.cfg.gazetteers.first_names:
+            return True
+        stop = self.cfg.gazetteers.stopwords
+        caps = [t for t in toks if t[:1].isupper() and t not in stop]
+        return len(caps) >= 2 and bool(re.search(r",\s*geb|\d", text))
+
     @staticmethod
     def _trim(text: str, ns: int, ne: int) -> tuple[int, int]:
         while ns < ne and text[ns] in " \t":
@@ -107,17 +133,45 @@ class RubrumParser:
     def parse(self, doc: Document) -> list[Span]:
         spans: list[Span] = []
         lines = self._lines(doc)
-        state: str | None = None  # party_name | party_addr | rep_name | rep_addr
+        state: str | None = None  # party_name | party_addr | rep_name | rep_addr | auth_addr
+        self._authority_party = False
         block_lines = 0
         for line in lines:
             text = line.text
             stripped = text.strip()
+            m = self.authority_label.match(text)
+            if m and stripped:
+                ns, ne = self._trim(line.para.norm, line.start + m.end(), line.end)
+                if ne > ns:
+                    spans.append(self._keep(line.para, ns, ne))
+                state, block_lines = "auth_addr", 0
+                continue
             m = self.party_label.match(text)
             if m:
+                content = text[m.end():]
+                if state in ("party_addr", "party_name") and self.address_only.match(content):
+                    # "Revisionswerber/ Hans Müller, Hofstrasse 4," + "Revisionsgegner: SVN-2250 Ptuj"
+                    ns, ne = self._trim(line.para.norm, line.start + m.end(), line.end)
+                    if ne > ns:
+                        spans.append(self._span(line.para, ns, ne, "address_tail", 0.9, note="Adresszeile im Rubrum"))
+                    continue
+                state, block_lines = "party_name", 0
+                state = self._content(line, line.start + m.end(), "party_name", spans) or state
+                continue
+            m = self.weak_label.match(text)
+            if m and self._name_like(text[m.end():]):
                 state, block_lines = "party_name", 0
                 state = self._content(line, line.start + m.end(), "party_name", spans) or state
                 continue
             if state is None:
+                continue
+            if state == "auth_addr":
+                if stripped and (self._address_like(text) or text[:1] in " \t") and \
+                        not any(rx.match(stripped) for rx in self.terminators):
+                    ns, ne = self._trim(line.para.norm, line.start, line.end)
+                    spans.append(self._keep(line.para, ns, ne))
+                    continue
+                state = None
                 continue
             m = self.rep_label.match(text)
             if m and stripped:
@@ -140,11 +194,11 @@ class RubrumParser:
                 state = "party_name"
                 continue
             num = _NUMBERING.match(text)
-            if num and state in ("party_name", "party_addr"):
+            if num and state in ("party_name", "party_addr", "rep_addr", "rep_name"):
                 state = self._content(line, line.start + num.end(), "party_name", spans) or "party_name"
             elif state in ("party_name", "rep_name"):
                 state = self._content(line, line.start, state, spans) or state
-            elif self._address_like(text):
+            elif self._address_like(text) or any(rx.search(text) for rx in self.extra_lines):
                 ns, ne = self._trim(line.para.norm, line.start, line.end)
                 if line.start > 0:
                     ns = line.start - 1  # include the line break before an address line
@@ -168,7 +222,10 @@ class RubrumParser:
             return "rep_addr"
         rep = self.rep_inline.search(norm, ns, ne)
         party_end = rep.start() if rep else ne
+        self._authority_party = False
         spans.extend(self._party(para, ns, party_end))
+        if self._authority_party and not rep:
+            return "auth_addr"
         if rep:
             rs, re_ = self._trim(norm, rep.end(), ne)
             if re_ > rs:
@@ -199,7 +256,8 @@ class RubrumParser:
         if not name or len(name) < 2 or name.strip("*") == "" or re.fullmatch(r"[A-Z]{1,2}", name):
             return []
         if self.keep.is_authority(name):
-            return []
+            self._authority_party = True
+            return [self._keep(para, name_s, ne)]  # authority party: name and address stay
         stop = self.cfg.gazetteers.stopwords
         if all(t in stop or not t[:1].isupper() for t in name.split()):
             return []  # "der Beschwerdeführerin" is a role, not a name

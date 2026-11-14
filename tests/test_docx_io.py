@@ -46,7 +46,7 @@ def test_reader_text_and_parts():
 def test_normalisation_maps_back():
     pkg = DocxPackage.from_bytes(make_docx(body=["Gebiet „Riet“ und Nr. 4716–Par­zelle"]))
     p = read_document(pkg).paragraphs[0]
-    assert p.norm == 'Gebiet "Riet" und Nr. 4716-Parzelle'
+    assert p.norm == 'Gebiet "Riet" und Nr. 4716\u2013Parzelle'
     ns = p.norm.index("Riet")
     s, e = p.to_orig(ns, ns + 4)
     assert p.text[s:e] == "Riet"
@@ -136,3 +136,28 @@ def test_object_inside_span_becomes_comment():
     assert not list(root.iter(w("del")))
     assert list(root.iter(w("commentRangeStart")))
     assert pkg.has("word/comments.xml")
+
+
+def test_normalisation_nfc_and_separators():
+    pkg = DocxPackage.from_bytes(make_docx(body=["Hans Mu\u0308ller\u2014so Albert\u200bKaiser"]))
+    p = read_document(pkg).paragraphs[0]
+    assert p.norm == "Hans M\u00fcller\u2013so Albert Kaiser"
+    ns = p.norm.index("M\u00fcller")
+    s, e = p.to_orig(ns, ns + len("M\u00fcller"))
+    assert p.text[s:e] == "Mu\u0308ller"           # the combining mark is inside the span
+
+
+def test_unpreserved_whitespace_is_not_text():
+    from lxml import etree
+
+    pkg = DocxPackage.from_bytes(make_docx(body=["x"]))
+    root = pkg.xml("word/document.xml")
+    p = next(root.iter(w("p")))
+    for r in list(p):
+        if r.tag == w("r"):
+            p.remove(r)
+    for text, preserve in (("Herr Albert Kaiser ", False), ("kam.", False)):
+        r = etree.SubElement(p, w("r"))
+        t = etree.SubElement(r, w("t"))
+        t.text = text
+    assert read_document(pkg).paragraphs[0].text == "Herr Albert Kaiserkam."

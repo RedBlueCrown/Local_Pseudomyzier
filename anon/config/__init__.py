@@ -41,6 +41,7 @@ class GazetteerEntry:
 class Gazetteers:
     places: list[GazetteerEntry] = field(default_factory=list)
     fieldnames: list[GazetteerEntry] = field(default_factory=list)
+    waters: list[GazetteerEntry] = field(default_factory=list)
     products: list[GazetteerEntry] = field(default_factory=list)
     first_names: set[str] = field(default_factory=set)
     stopwords: set[str] = field(default_factory=set)
@@ -96,6 +97,7 @@ def load_gazetteers(extra_dirs: list[Path] | None = None) -> Gazetteers:
     return Gazetteers(
         places=_parse_place_lines(_read_lines(files("places_li.txt")) + _read_lines(files("places_foreign.txt"))),
         fieldnames=_simple_entries(_read_lines(files("fieldnames.txt")), "fieldname"),
+        waters=_simple_entries(_read_lines(files("waters.txt")), "fieldname"),
         products=_simple_entries(_read_lines(files("products.txt")), "product"),
         first_names=set(_read_lines(files("first_names.txt"))),
         stopwords=set(_read_lines(files("name_stopwords.txt"))),

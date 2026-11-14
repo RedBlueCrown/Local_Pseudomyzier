@@ -65,9 +65,15 @@ def review(
     _offline()
     from .pipeline import review as run_review  # noqa: PLC0415
 
+    from .docx_io.package import DocxError  # noqa: PLC0415
+
     cfg = load_config(config)
     llm = _llm_client(cfg, no_llm)
-    analysis, docx, xlsx = run_review(input, cfg, out, use_ner=not no_ner, entities_path=entities, llm=llm)
+    try:
+        analysis, docx, xlsx = run_review(input, cfg, out, use_ner=not no_ner, entities_path=entities, llm=llm)
+    except DocxError as exc:
+        typer.secho(f"Fehler: {exc}", fg="red", err=True)
+        raise typer.Exit(code=2) from None
     s = analysis.stats
     typer.echo(f"Prüfkopie:  {docx}")
     typer.echo(f"Entitäten:  {xlsx}  (enthält Originalwerte)")

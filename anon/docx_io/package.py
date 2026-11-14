@@ -34,6 +34,9 @@ REL_ENDNOTES = REL_BASE + "endnotes"
 REL_COMMENTS = REL_BASE + "comments"
 REL_HYPERLINK = REL_BASE + "hyperlink"
 
+STRICT_W_NS = "http://purl.oclc.org/ooxml/wordprocessingml/main"
+STRICT_REL_OFFICE_DOCUMENT = "http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument"
+
 CT_COMMENTS = "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"
 
 MAX_UNCOMPRESSED = 512 * 1024 * 1024  # refuse absurd archives (zip bombs)
@@ -269,11 +272,17 @@ class DocxPackage:
     # Story parts -------------------------------------------------------------
     def main_part(self) -> str:
         for rel in self.relationships(""):
-            if rel.get("Type") == REL_OFFICE_DOCUMENT:
-                return self.resolve("", rel.get("Target", ""))
-        if self.has("word/document.xml"):
-            return "word/document.xml"
-        raise DocxError("no main document part")
+            if rel.get("Type") in (REL_OFFICE_DOCUMENT, STRICT_REL_OFFICE_DOCUMENT):
+                part = self.resolve("", rel.get("Target", ""))
+                break
+        else:
+            if not self.has("word/document.xml"):
+                raise DocxError("no main document part")
+            part = "word/document.xml"
+        if self.xml(part).tag.startswith(f"{{{STRICT_W_NS}}}"):
+            raise DocxError("Strict Open XML is not supported: please save the file in Word as "
+                            "'Word-Dokument (*.docx)' and try again")
+        return part
 
     def story_parts(self) -> list[tuple[str, str]]:
         """(part name, kind) in processing order. kind is one of

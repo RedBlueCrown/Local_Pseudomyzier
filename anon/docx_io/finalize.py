@@ -236,23 +236,45 @@ def _comment_text(c: etree._Element) -> str:
 
 
 def tool_comment_states(pkg: DocxPackage) -> dict[int, str]:
-    """item id -> 'open' | 'done' for every tool comment still present."""
+    """item id -> 'open' | 'done' for every tool comment still present.
+    A comment belongs to an item if its anchor lies inside the item's
+    _anonC_ bookmark or its text starts with "[#n]"."""
     part = comments_part(pkg)
     if part is None:
         return {}
     done_para: set[str] = set()
-    ext_parts = [n for n in pkg.names if n.startswith("word/commentsExtended")]
-    for ext in ext_parts:
+    for ext in [n for n in pkg.names if n.startswith("word/commentsExtended")]:
         for el in pkg.xml(ext).iter(f"{{{W15_NS}}}commentEx"):
             if el.get(f"{{{W15_NS}}}done") in ("1", "true"):
                 done_para.add(el.get(f"{{{W15_NS}}}paraId"))
-    states: dict[int, str] = {}
+    comment_state: dict[str, str] = {}
+    marker_item: dict[str, int] = {}
     for c in pkg.xml(part).iter(w("comment")):
-        m = _MARKER_RE.match(_comment_text(c).strip())
-        if not m:
-            continue
         para_ids = {p.get(f"{{{W14_NS}}}paraId") for p in c.iter(w("p"))}
-        states[int(m.group(1))] = "done" if para_ids & done_para else "open"
+        comment_state[c.get(w("id"))] = "done" if para_ids & done_para else "open"
+        m = _MARKER_RE.match(_comment_text(c).strip())
+        if m:
+            marker_item[c.get(w("id"))] = int(m.group(1))
+    states: dict[int, str] = {}
+    for cid, item in marker_item.items():
+        states[item] = comment_state[cid]
+    for story, _ in pkg.story_parts():
+        if story == part:
+            continue
+        open_items: dict[str, int] = {}
+        for el in pkg.xml(story).iter():
+            if el.tag == w("bookmarkStart") and el.get(w("name"), "").startswith(BOOKMARK_COMMENT):
+                mm = _BM_RE.match(el.get(w("name"), ""))
+                if mm:
+                    open_items[el.get(w("id"))] = int(mm.group(1))
+            elif el.tag == w("bookmarkEnd"):
+                open_items.pop(el.get(w("id")), None)
+            elif el.tag in (w("commentRangeStart"), w("commentReference")) and open_items:
+                cid = el.get(w("id"))
+                if cid in comment_state:
+                    for item in open_items.values():
+                        if states.get(item) != "open":
+                            states[item] = comment_state[cid]
     return states
 
 
@@ -271,7 +293,7 @@ def remove_comments(pkg: DocxPackage, authors: set[str] | None) -> int:
             removed_para_ids |= {p.get(f"{{{W14_NS}}}paraId") for p in c.iter(w("p"))}
             _remove(c)
     for story, _ in pkg.story_parts():
-        if story == part:
+        if not pkg.has(story):
             continue
         sroot = pkg.xml(story)
         for el in list(sroot.iter(w("commentRangeStart"), w("commentRangeEnd"))):
@@ -329,29 +351,52 @@ def tool_ranges(doc: Document) -> list[ToolRange]:
             elif el.tag == w("bookmarkEnd") and el.get(w("id")) in opened:
                 kind, item, start = opened.pop(el.get(w("id")))
                 out.append(ToolRange(kind, item, para.part, para.index, start, m.offset))
-        for kind, item, start in opened.values():
-            out.append(ToolRange(kind, item, para.part, para.index, start, len(para.text)))
+        # a start without end in the same paragraph is ignored: it must not
+        # widen what the leak check accepts
     return out
 
 
-def pending_tool_changes(pkg: DocxPackage, tool_authors: set[str]) -> set[int]:
-    """Items whose tracked change by the tool is still present (not yet
-    accepted or rejected by the reviewer)."""
-    pending: set[int] = set()
+@dataclass
+class ItemState:
+    has_del: bool = False
+    has_ins: bool = False
+    ins_text: str = ""
+
+
+def tool_item_states(pkg: DocxPackage, tool_authors: set[str]) -> dict[int, ItemState]:
+    """For every _anonR_ item that still has a tool revision: whether the
+    deletion and the insertion are still there and what the insertion says.
+    Must run BEFORE accepting. An item missing here was fully accepted or
+    fully rejected by the reviewer."""
+    from .reader import t_text  # noqa: PLC0415
+
+    states: dict[int, ItemState] = {}
     for part, _ in pkg.story_parts():
         open_ids: dict[str, int] = {}
         for el in pkg.xml(part).iter():
             tag = el.tag
             if tag == w("bookmarkStart"):
-                mm = _BM_RE.match(el.get(w("name"), ""))
-                if mm and el.get(w("name"), "").startswith(BOOKMARK_CHANGE):
+                name = el.get(w("name"), "")
+                mm = _BM_RE.match(name)
+                if mm and name.startswith(BOOKMARK_CHANGE):
                     open_ids[el.get(w("id"))] = int(mm.group(1))
             elif tag == w("bookmarkEnd"):
                 open_ids.pop(el.get(w("id")), None)
-            elif tag in _DEL or tag in _INS:
-                if el.get(w("author")) in tool_authors:
-                    pending.update(open_ids.values())
-    return pending
+            elif (tag in _DEL or tag in _INS) and open_ids and el.get(w("author")) in tool_authors:
+                if _mark_context(el) is not None:
+                    continue
+                for item in open_ids.values():
+                    st = states.setdefault(item, ItemState())
+                    if tag in _DEL:
+                        st.has_del = True
+                    else:
+                        st.has_ins = True
+                        st.ins_text += "".join(t_text(t) for t in el.iter(w("t")))
+    return states
+
+
+def pending_tool_changes(pkg: DocxPackage, tool_authors: set[str]) -> set[int]:
+    return set(tool_item_states(pkg, tool_authors))
 
 
 def strip_tool_highlights(pkg: DocxPackage, colours: set[str]) -> int:
@@ -415,13 +460,16 @@ def strip_metadata(pkg: DocxPackage, *, strip_custom_xml: bool = True, remove_gl
     settings = "word/settings.xml"
     if pkg.has(settings):
         root = pkg.xml(settings)
+        rid_attr = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
         for tag in ("rsids", "docVars", "attachedTemplate", "mailMerge", "trackRevisions"):
             for el in root.findall(w(tag)):
-                if tag == "attachedTemplate":
-                    rid = el.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
-                    if rid:
-                        pkg.remove_relationship(settings, rid)
+                for sub in el.iter():
+                    if sub.get(rid_attr):
+                        pkg.remove_relationship(settings, sub.get(rid_attr))
                 root.remove(el)
+        for ns in (W14_NS, W15_NS):
+            for el in root.findall(f"{{{ns}}}docId"):
+                root.remove(el)  # links the clean file to its source document
         if root.find(w("removePersonalInformation")) is None:
             el = etree.Element(w("removePersonalInformation"))
             pos = 0
@@ -447,6 +495,9 @@ def strip_metadata(pkg: DocxPackage, *, strip_custom_xml: bool = True, remove_gl
         removed += pkg.remove_parts(lambda n: n.startswith("docProps/thumbnail"))
     if remove_glossary:
         removed += pkg.remove_parts(lambda n: n.startswith("word/glossary/") and not n.endswith(".rels"))
+    for part, _ in pkg.story_parts():
+        for el in pkg.xml(part).iter(w("date")):
+            el.attrib.pop(w("fullDate"), None)  # date content control keeps the original date
     if strip_custom_xml:
         removed += pkg.remove_parts(lambda n: n.startswith("customXml/") and not n.endswith(".rels"))
         for part, _ in pkg.story_parts():

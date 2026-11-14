@@ -38,6 +38,14 @@ _PARTICLE_ONLY = re.compile(PARTICLE)
 _ARTICLE_BEFORE = r"(?:\b(?:der|die|des|dem|den|ein|eine|einer|einem|eines|seine[mnrs]?|ihre[mnrs]?|deren|dessen)\s+)?"
 
 
+_PLACE_NOUN_AFTER = re.compile(
+    r"\s+(?:Grundst|Parzelle|Gemeinde|Liegenschaft|Bürger|Einwohner|Ortsteil|Dorf|Strasse|Feld|Wald|Alp|Riet|"
+    r"Weiler|Zentrum|Bevölkerung|Bauzone|Landwirtschaftszone|Rheindamm|Industriezone|Gewerbezone)")
+# common-noun endings never used as surnames here (length >= 9: "Bedeutung", "Durchführung")
+_NOUN_SUFFIX = re.compile(r"^.{5,}(?:ung|heit|keit|schaft|tion|ität|ismus|nisse?)$")
+_DOSAGE = re.compile(r"\s*\d+(?:[.,]\d+)?\s?(?:mg|ml|µg|mcg|g|IE|I\.E\.)\b")
+
+
 def iban_valid(raw: str) -> bool:
     s = re.sub(r"\s", "", raw).upper()
     if not re.fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9]{8,30}", s):
@@ -84,9 +92,14 @@ class RuleDetector:
                     self.place_entries[cv] = e
                     forms.append(cv)
         self.place_re = re.compile(NAME_LEFT + alternation(forms) + NAME_RIGHT)
-        self.field_entries = {e.form: e for e in g.fieldnames}
+        field_ctx = rf"(?:\b{d.get('field_context_nouns', _FIELD_CTX)}\s+)"
+        self.field_ctx = field_ctx
+        self.field_entries = {e.form: e for e in g.fieldnames + g.waters}
         self.field_re = re.compile(NAME_LEFT + alternation(list(self.field_entries)) + NAME_RIGHT) if self.field_entries else None
-        self.field_quoted = re.compile(rf'(?P<ctx>{_FIELD_CTX}|{_FIELD_PREP})"(?P<name>[{UPPER}][^"\n]{{1,40}}?)"')
+        self.field_quoted = re.compile(rf'(?P<ctx>{field_ctx}|{_FIELD_PREP})"(?P<name>[{UPPER}][^"\n]{{1,40}}?)"')
+        self.place_ctx = re.compile(
+            rf"\b{d['place_context_nouns']}\s+(?P<name>[{UPPER}][\w'-]+(?:\s[{UPPER}][\w'-]+)?)") \
+            if d.get("place_context_nouns") else None
         self.product_re = (re.compile(NAME_LEFT + alternation([e.form for e in g.products]) + NAME_RIGHT)
                            if g.products else None)
         # streets / addresses
@@ -123,6 +136,8 @@ class RuleDetector:
         bd = d["birthdates"]
         self.birth_res = [re.compile(rf"(?P<trig>{t})(?P<date>{bd['date']})") for t in bd["triggers"]]
         self.birth_year_res = [re.compile(rf"(?P<trig>{t})(?P<date>(?:19|20)\d{{2}})(?![\w])") for t in bd["year_triggers"]]
+        self.birth_trailing = [re.compile(rf"(?P<am>\bam\s+)?(?P<date>{bd['date']})(?={t})")
+                               for t in bd.get("trailing_triggers", [])]
         # identifiers
         self.ids = []
         for item in d.get("ids", []):
@@ -138,8 +153,14 @@ class RuleDetector:
             if not para.norm.strip():
                 continue
             for fn in (self._ids, self._birthdates, self._plots, self._addresses, self._places, self._fieldnames,
-                       self._products, self._persons, self._companies):
+                       self._place_context, self._products, self._persons, self._companies):
                 out.extend(fn(para))
+        # a field name confirmed by context anywhere in the decision is a field
+        # name everywhere ("Feldweg „Riet“" ... "Riet")
+        confirmed = {s.text for s in out if s.kind == "fieldname" and s.confidence >= 0.7}
+        for s in out:
+            if s.kind == "fieldname" and s.text in confirmed and s.confidence < 0.7:
+                s.confidence = 0.75
         return out
 
     def _span(self, para: Paragraph, ns: int, ne: int, kind: str, conf: float, source: str = "rules",
@@ -172,6 +193,11 @@ class RuleDetector:
                 am = trig.rfind("am ")
                 gen_start = m.start("trig") + am if am >= 0 else m.start("date")
                 out.append(self._span(para, m.start("date"), m.end("date"), "birthdate", 0.95,
+                                      generalise_from=para.to_orig(gen_start, gen_start)[0]))
+        for rx in self.birth_trailing:
+            for m in rx.finditer(para.norm):
+                gen_start = m.start("am") if m.group("am") else m.start("date")
+                out.append(self._span(para, m.start("date"), m.end("date"), "birthdate", 0.9,
                                       generalise_from=para.to_orig(gen_start, gen_start)[0]))
         for rx in self.birth_year_res:
             for m in rx.finditer(para.norm):
@@ -239,16 +265,34 @@ class RuleDetector:
             if entry is None:
                 continue
             kind = entry.kind
+            after = n[m.end() : m.end() + 40]
             if not entry.ambiguous:
                 conf = 0.95 if kind == "place" else 0.9
             elif kind == "place" and _PLACE_CONTEXT.search(n[max(0, m.start() - 30) : m.start()]):
                 conf = 0.9
+            elif kind == "place_adj" and _PLACE_NOUN_AFTER.match(after):
+                conf = 0.9  # "des Maurer Grundstücks"
             else:
                 conf = 0.4
             meta = {"base": entry.base, "gazetteer_ambiguous": entry.ambiguous}
             if entry.ambiguous and conf < 0.6:
                 meta["note"] = "mehrdeutiger Ortsname (auch Wort/Nachname)"
             out.append(self._span(para, m.start(), m.end(), kind, conf, source="gazetteer", **meta))
+        return out
+
+    def _place_context(self, para: Paragraph) -> list[Span]:
+        if self.place_ctx is None:
+            return []
+        out = []
+        for m in self.place_ctx.finditer(para.norm):
+            name = m.group("name")
+            first = name.split()[0]
+            if first in self.stop or first in self.place_entries or _NOUN_SUFFIX.search(first):
+                continue
+            if len(name.split()) > 1 and name.split()[1] in self.stop:
+                name = first
+            out.append(self._span(para, m.start("name"), m.start("name") + len(name), "place", 0.8,
+                                  note="Ortsname nach Einrichtung (Krankenhaus, Gericht ...)"))
         return out
 
     def _fieldnames(self, para: Paragraph) -> list[Span]:
@@ -258,15 +302,19 @@ class RuleDetector:
             name = m.group("name")
             if len(name.split()) > 3 or name.split()[0] in self.stop:
                 continue
-            noun_ctx = bool(re.match(_FIELD_CTX, m.group("ctx")))
+            noun_ctx = bool(re.match(self.field_ctx, m.group("ctx")))
             out.append(self._span(para, m.start("name"), m.end("name"), "fieldname", 0.85 if noun_ctx else 0.55,
                                   note="Flurname?"))
         if self.field_re is not None:
             for m in self.field_re.finditer(n):
                 entry = self.field_entries[m.group()]
                 before = n[max(0, m.start() - 30) : m.start()]
-                ctx = re.search(rf"(?:{_FIELD_CTX}|{_FIELD_PREP})\"?$", before)
-                conf = 0.85 if (ctx or not entry.ambiguous) else 0.4
+                if re.search(rf"{self.field_ctx}\"?$", before) or not entry.ambiguous:
+                    conf = 0.85
+                elif re.search(rf"(?:{_FIELD_PREP}|\b(?:zur|zum|an\sder|entlang\sder|in\sdie|in\sden)\s+)\"?$", before):
+                    conf = 0.7
+                else:
+                    conf = 0.4
                 out.append(self._span(para, m.start(), m.end(), "fieldname", conf, source="gazetteer"))
         return out
 
@@ -290,8 +338,10 @@ class RuleDetector:
         toks: list[tuple[str, int, int]] = []
         pos = j
         while len(toks) < self.max_tokens:
-            m = _TOKEN.match(n, pos) or _PARTICLE_RE.match(n, pos)
-            if m is None or m.group() in self.stop:
+            m = _TOKEN.match(n, pos)
+            if m is None and (not toks or all(t[0] in self.first_names or t[0].endswith(".") for t in toks)):
+                m = _PARTICLE_RE.match(n, pos)  # "Herr von Gunten", "Hans von Gunten"
+            if m is None or m.group() in self.stop or _NOUN_SUFFIX.match(m.group()):
                 break
             tok = m.group()
             toks.append((tok, m.start(), m.end()))
@@ -302,15 +352,16 @@ class RuleDetector:
             if ws is None:
                 break
             nxt = _TOKEN.match(n, ws.end()) or _PARTICLE_RE.match(n, ws.end())
-            if nxt is None or nxt.group() in self.stop:
+            if nxt is None or nxt.group() in self.stop or _NOUN_SUFFIX.match(nxt.group()):
                 break
-            if not leading and (nxt.group().endswith(".") or nxt.group() in self.first_names):
+            if not leading and (nxt.group().endswith(".") or nxt.group() in self.first_names
+                                or _PARTICLE_ONLY.fullmatch(nxt.group())):
                 break
             pos = ws.end()
         while toks and (toks[-1][0].endswith(".") or _PARTICLE_ONLY.fullmatch(toks[-1][0])):
             toks.pop()
-        if not toks:
-            return None
+        if not toks or _DOSAGE.match(n, toks[-1][2]):
+            return None  # "Ärztin Lorsilan 1mg" is a medication
         return toks[0][1], toks[-1][2], [t[0] for t in toks]
 
     def _persons(self, para: Paragraph) -> list[Span]:
