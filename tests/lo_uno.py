@@ -1,6 +1,7 @@
 """LibreOffice helper, run with the *system* python that has `uno`.
 
 usage: python3 lo_uno.py OUT.json FILE.docx [FILE.docx ...]
+       python3 lo_uno.py --simulate REVIEW.docx SAVED.docx REJECT_AUTHOR
 
 For every file: load it in a headless LibreOffice, record the redlines
 (author, type) and the plain text in three views: as loaded, after
@@ -61,7 +62,55 @@ def redlines(doc):
     return out
 
 
+def simulate_reviewer(src, dst, reject_author):
+    """Reject every change by `reject_author`, accept the rest, delete all
+    comments, save as .docx (what a reviewer does in LibreOffice)."""
+    proc, ctx = connect()
+    smgr = ctx.ServiceManager
+    desktop = smgr.createInstanceWithContext("com.sun.star.frame.Desktop", ctx)
+    dispatcher = smgr.createInstanceWithContext("com.sun.star.frame.DispatchHelper", ctx)
+    try:
+        doc = desktop.loadComponentFromURL(uno.systemPathToFileUrl(os.path.abspath(src)), "_blank", 0,
+                                           (pv("Hidden", True),))
+        frame = doc.CurrentController.Frame
+        for _ in range(1000):
+            target = None
+            e = doc.Redlines.createEnumeration()
+            while e.hasMoreElements():
+                r = e.nextElement()
+                if r.getPropertyValue("RedlineAuthor") == reject_author:
+                    target = r
+                    break
+            if target is None:
+                break
+            start, end = target.getPropertyValue("RedlineStart"), target.getPropertyValue("RedlineEnd")
+            cur = start.getText().createTextCursorByRange(start)
+            cur.gotoRange(end, True)
+            doc.CurrentController.select(cur)
+            dispatcher.executeDispatch(frame, ".uno:RejectTrackedChange", "", 0, ())
+        dispatcher.executeDispatch(frame, ".uno:AcceptAllTrackedChanges", "", 0, ())
+        anns = []
+        fields = doc.TextFields.createEnumeration()
+        while fields.hasMoreElements():
+            f = fields.nextElement()
+            if f.supportsService("com.sun.star.text.TextField.Annotation"):
+                anns.append(f)
+        for f in anns:
+            f.dispose()
+        doc.storeToURL(uno.systemPathToFileUrl(os.path.abspath(dst)), (pv("FilterName", "MS Word 2007 XML"),))
+        doc.close(True)
+    finally:
+        try:
+            desktop.terminate()
+        except Exception:
+            pass
+        proc.wait(timeout=30)
+
+
 def main():
+    if sys.argv[1] == "--simulate":
+        simulate_reviewer(sys.argv[2], sys.argv[3], sys.argv[4])
+        return
     out_json = sys.argv[1]
     files = sys.argv[2:]
     proc, ctx = connect()

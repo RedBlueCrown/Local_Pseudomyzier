@@ -136,6 +136,13 @@ def insert_summary(pkg: DocxPackage, entities: list[Entity], cfg: Config, notes:
     br = etree.SubElement(etree.SubElement(last, w("r")), w("br"))
     br.set(w("type"), "page")
     last.append(end)
+    # point bookmark: survives editors that collapse a range spanning a table
+    end_id = str(ids.next())
+    mark = etree.SubElement(last, w("bookmarkStart"))
+    mark.set(w("id"), end_id)
+    mark.set(w("name"), SUMMARY_BOOKMARK + "_END")
+    mark_end = etree.SubElement(last, w("bookmarkEnd"))
+    mark_end.set(w("id"), end_id)
     blocks.append(last)
     for i, el in enumerate(blocks):
         body.insert(i, el)

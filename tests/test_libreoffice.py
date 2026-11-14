@@ -68,5 +68,37 @@ def test_libreoffice_accept_reject_and_pdf(tmp_path):
     assert (tmp_path / "VGH.review.pdf").stat().st_size > 1000
 
 
+def test_reviewer_in_libreoffice_then_finalize(tmp_path):
+    """Reviewer rejects all 'Ort' changes, accepts the rest and deletes the
+    'Prüfen' comments in LibreOffice, saves as .docx; finalize must accept the
+    reviewer's decisions (bookmarks/markers survive another editor's save)."""
+    from docx_factory import make_docx
+
+    cfg = load_config()
+    src = tmp_path / "in.docx"
+    src.write_bytes(make_docx(body=[
+        "Beschwerdeführer:\tAlbert Kaiser, Dorfstrasse 5, 9490 Vaduz",
+        {"table": [["Beschwerdegegnerin:", "Papageien Anstalt, Landstrasse 12, 9495 Triesen"]]},
+        "I. Sachverhalt",
+        "Albert Kaiser besitzt das Vaduzer Grundstück Nr. 4716; die Planken des Stegs sind morsch.",
+    ]))
+    _, docx, xlsx = review(src, cfg, tmp_path / "out", use_ner=False)
+    saved = tmp_path / "saved.docx"
+    helper = Path(__file__).with_name("lo_uno.py")
+    run = subprocess.run([SYSTEM_PY, str(helper), "--simulate", str(docx), str(saved), "Ort"],
+                         capture_output=True, timeout=240)
+    assert run.returncode == 0, run.stderr.decode(errors="replace")[-2000:]
+    result = finalize(saved.read_bytes(), read_entities(xlsx), cfg)
+    assert result.data is not None, result.report.summary_lines()
+    statuses = {h.status for h in result.report.hits}
+    assert {"rejected_by_reviewer", "resolved_comment"} <= statuses
+    from anon.docx_io.package import DocxPackage
+    from anon.docx_io.reader import read_document
+
+    text = "\n".join(p.text for p in read_document(DocxPackage.from_bytes(result.data)).paragraphs)
+    assert "Prüfübersicht" not in text
+    assert "A besitzt das Vaduzer Grundstück Nr. 1; die Planken des Stegs sind morsch." in text
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__, "-q"]))

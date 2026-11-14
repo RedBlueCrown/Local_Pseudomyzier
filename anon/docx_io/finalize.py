@@ -190,26 +190,32 @@ def count_revisions(pkg: DocxPackage) -> int:
 # Summary block
 # ---------------------------------------------------------------------------
 def remove_summary(pkg: DocxPackage) -> bool:
+    """Remove the summary block: every top-level body element from the first
+    to the last one carrying an ANON_SUMMARY* bookmark (start or matching end).
+    Word keeps the range bookmark intact; LibreOffice collapses a bookmark
+    spanning a table into point bookmarks, hence the extra ANON_SUMMARY_END
+    point bookmark in the last summary paragraph."""
     root = pkg.xml(pkg.main_part())
     body = root.find(w("body"))
     if body is None:
         return False
-    start = next((b for b in body.iter(w("bookmarkStart")) if b.get(w("name")) == SUMMARY_BOOKMARK), None)
-    if start is None:
+    starts = [b for b in body.iter(w("bookmarkStart")) if b.get(w("name"), "").startswith(SUMMARY_BOOKMARK)]
+    if not starts:
         return False
-    bid = start.get(w("id"))
-    end = next((b for b in body.iter(w("bookmarkEnd")) if b.get(w("id")) == bid), None)
+    ids = {b.get(w("id")) for b in starts}
+    ends = [b for b in body.iter(w("bookmarkEnd")) if b.get(w("id")) in ids]
 
     def top(el: etree._Element) -> etree._Element:
         while el.getparent() is not body:
             el = el.getparent()
         return el
 
-    first = top(start)
-    last = top(end) if end is not None else first
     children = list(body)
-    i, j = children.index(first), children.index(last)
+    positions = [children.index(top(el)) for el in starts + ends]
+    i, j = min(positions), max(positions)
     for el in children[i : j + 1]:
+        if el.tag == w("sectPr"):
+            continue
         body.remove(el)
     return True
 
