@@ -60,11 +60,14 @@ cited_case_names:
 # Cited authors ("vgl. Kley/Vogt, Grundrechtspraxis, Rz 12"; "Hangartner, in: ...").
 cited_authors:
   # author lists "Kley/Vogt", "Pierre Tschannen/Markus Müller/ Markus Kern, Titel"
-  - '\b(?:[A-ZÄÖÜ][\w''-]+\.?\s+){0,2}[A-ZÄÖÜ][\w''-]+(?:\s*/\s*(?:[A-ZÄÖÜ][\w''-]+\.?\s+){0,2}[A-ZÄÖÜ][\w''-]+)+\b(?=\s*(?:,|\(|in:|\bin\b|\)))'
+  - '\b(?:[A-ZÄÖÜ][\w''-]*\.?\s+){0,2}[A-ZÄÖÜ][\w''-]+(?:\s*/\s*(?:[A-ZÄÖÜ][\w''-]*\.?\s+){0,2}[A-ZÄÖÜ][\w''-]+)+\b(?=\s*(?:,|\(|in:|\bin\b|\)))'
   - '\b[A-ZÄÖÜ][\w''-]+(?=,?\s+in:\s)'
   - '\b[A-ZÄÖÜ][\w''-]+(?=\s+in\s+[A-ZÄÖÜ][\w''-]+(?:/[A-ZÄÖÜ][\w''-]+)*\s*(?:\(Hrsg\.\)|,))'
-  - '\b(?:[A-ZÄÖÜ][\w''-]+\.?\s+){0,2}[A-ZÄÖÜ][\w''-]+(?=,\s[^,.;\n\d]{3,90},\s(?:\d+\.?\s)?(?:Aufl\.|Auflage|Rz\.?|Rn\.?|N\.?\s?\d|S\.\s?\d|(?:19|20)\d{2}(?!\s+[A-ZÄÖÜ])))'
+  - '\b(?:[A-ZÄÖÜ][\w''-]*\.?\s+){0,2}[A-ZÄÖÜ][\w''-]+(?=,\s[^,.;\n\d]{3,90},\s(?:\d+\.?\s)?(?:Aufl\.|Auflage|Rz\.?|Rn\.?|N\.?\s?\d|S\.\s?\d|(?:19|20)\d{2}(?!\s+[A-ZÄÖÜ])))'
   - '\b(?:vgl\.|siehe|so|ebenso|ähnlich|gl\.M\.|aA|a\.A\.|mwN|m\.w\.N\.)\s+[A-ZÄÖÜ][\w''-]+(?=,\s)'
+  # "siehe Hugo Vogt, Rechtsgleichheit und …, in: Kley/Vallender [Hrsg.], …";
+  # "vgl. auch Herbert Wille, Liechtensteinisches Verwaltungsrecht, LPS Bd. 38, Schaan 2004"
+  - '\b(?:[A-ZÄÖÜ][\w''-]*\.?\s+){0,3}[A-ZÄÖÜ][\w''-]+(?=,\s[^;\n]{3,160}?,\s(?:in:|LPS\b|a\.\s?a\.\s?O\.|Bd\.|Band\b|(?:\d+\.\s)?Aufl|[A-ZÄÖÜ][\w.-]+\s(?:19|20)\d{2}\b))'
 
 # Authorities that are a party or whose decision is appealed.
 authorities:

@@ -156,7 +156,7 @@ def test_unpreserved_whitespace_is_not_text():
     for r in list(p):
         if r.tag == w("r"):
             p.remove(r)
-    for text, preserve in (("Herr Albert Kaiser ", False), ("kam.", False)):
+    for text in ("Herr Albert Kaiser ", "kam."):
         r = etree.SubElement(p, w("r"))
         t = etree.SubElement(r, w("t"))
         t.text = text

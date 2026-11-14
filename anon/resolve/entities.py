@@ -205,7 +205,8 @@ class EntityBuilder:
             if e is None:
                 e = self._new(key[0], None)
                 self._values[key] = e
-            e.add_form(s.text)
+            if not s.meta.get("generic"):
+                e.add_form(s.text)
             self._attach(e, s)
         return self.entities
 
@@ -286,9 +287,20 @@ class EntityBuilder:
             self._add_person(Span(s.part, s.para, s.start, s.end, para.text[s.start:s.end], "person", s.source,
                                   s.confidence, s.role, {"tokens": [s.text]}))
 
+    @staticmethod
+    def _abbreviates(short: str, long: str) -> bool:
+        """'Fundonia Immo' / 'Fundonia Immo.' abbreviate 'Fundonia Immobilien'."""
+        a, b = short.replace(".", "").split(), long.split()
+        return len(a) == len(b) and a != b and all(y.startswith(x) for x, y in zip(a, b)) and a[0] == b[0]
+
     def _add_org(self, s: Span) -> None:
         key = re.sub(r"\s+", " ", s.text).strip().casefold()
         e = self._orgs.get(key)
+        if e is None:
+            for k, other in self._orgs.items():
+                if self._abbreviates(key, k) or self._abbreviates(k, key):
+                    e = other
+                    break
         if e is None:
             e = self._new("org", s.role or "affected")
             self._orgs[key] = e

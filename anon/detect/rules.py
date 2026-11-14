@@ -20,7 +20,7 @@ from .text import (
 _COUNTRIES = r"(?:Liechtenstein|Schweiz|Österreich|Deutschland|Italien|Frankreich)"
 _CANTONS = r"(?:SG|GR|ZH|AG|BE|LU|TG|AR|AI|SZ|GL|ZG|SO|BL|BS|SH|TI|VD|VS|NE|GE|JU|FR|NW|OW|UR)"
 PLACE_NAME = (
-    rf"(?:(?:St\.|Sankt|Bad|Klein|Gross|Ober|Unter)\s)?(?!{_COUNTRIES}\b)[{UPPER}][\w'-]*"
+    rf"(?:(?:St\.|Sankt|Bad|Klein|Gross|Ober|Unter)\s)?(?!{_COUNTRIES}\b)[{UPPER}](?=[a-zäöüé])[\w'-]*"
     rf"(?:\s(?:am|an\sder|im|ob|bei)\s[{UPPER}][\w'-]+)?(?:\s{_CANTONS}(?![\w]))?"
 )
 _PLACE_CONTEXT = re.compile(
@@ -42,7 +42,9 @@ _PLACE_NOUN_AFTER = re.compile(
     r"\s+(?:Grundst|Parzelle|Gemeinde|Liegenschaft|Bürger|Einwohner|Ortsteil|Dorf|Strasse|Feld|Wald|Alp|Riet|"
     r"Weiler|Zentrum|Bevölkerung|Bauzone|Landwirtschaftszone|Rheindamm|Industriezone|Gewerbezone)")
 # common-noun endings never used as surnames here (length >= 9: "Bedeutung", "Durchführung")
-_NOUN_SUFFIX = re.compile(r"^.{5,}(?:ung|heit|keit|schaft|tion|ität|ismus|nisse?)$")
+_NOUN_SUFFIX = re.compile(
+    r"^.{5,}(?:(?:ung|heit|keit|schaft|tion|ität)(?:en)?|ismus|nisse?|rechten?|pflichten?|verfahren|gesetze?s?|"
+    r"anträge?n?|gründe?n?|urteile?n?|verträge?n?)$")
 _DOSAGE = re.compile(r"\s*\d+(?:[.,]\d+)?\s?(?:mg|ml|µg|mcg|g|IE|I\.E\.)\b")
 
 
@@ -73,6 +75,7 @@ class RuleDetector:
         self.honorific = re.compile(rf"\b(?:{'|'.join(d['honorifics'])})\s+")
         self.person_ctx = [(re.compile(rf"\b{_ARTICLE_BEFORE}(?:{c['pattern']})\s+"), c["role"])
                            for c in d.get("person_context", [])]
+        self.role_nouns = [re.compile(c["pattern"]) for c in d.get("person_context", [])]
         self.legal_re = re.compile(rf"(?<![\w-])(?:{'|'.join(sorted(d['legal_forms'], key=len, reverse=True))})(?![\w-])")
         self.activity = set(d.get("company_activity_words", []))
         first = alternation(sorted(self.first_names))
@@ -219,7 +222,9 @@ class RuleDetector:
                 if m is None:
                     break
                 num = m.group("num")
-                if not first and re.match(r"\s+[A-ZÄÖÜ]", n[m.end("num") :]) and len(num) >= 4:
+                nxt = re.match(r"\s+([A-ZÄÖÜ][\w.-]*)", n[m.end("num") :])
+                if not first and not m.group("nr") and nxt and len(num) >= 4 and (
+                        nxt.group(1) in self.place_entries or re.fullmatch(r"94(?:8[5-9]|9[0-8])", num)):
                     break  # ", 9490 Vaduz" is a postcode, not another plot
                 looks_year = bool(re.fullmatch(r"(?:19|20)\d{2}", num))
                 conf = 0.95 if (m.group("nr") or not looks_year) else 0.4
@@ -285,12 +290,12 @@ class RuleDetector:
             return []
         out = []
         for m in self.place_ctx.finditer(para.norm):
-            name = m.group("name")
-            first = name.split()[0]
-            if first in self.stop or first in self.place_entries or _NOUN_SUFFIX.search(first):
+            name = m.group("name").split()[0]
+            if name in self.stop or name in self.place_entries or _NOUN_SUFFIX.search(name) \
+                    or self.legal_re.match(para.norm, m.start("name") + len(name) + 1):
                 continue
-            if len(name.split()) > 1 and name.split()[1] in self.stop:
-                name = first
+            if re.match(r"\s+[A-ZÄÖÜ][\w-]*\s+(?:" + self.legal_re.pattern + ")", para.norm[m.start("name") + len(name):]):
+                continue  # "(Dorf Gastronomie AG)" is a company
             out.append(self._span(para, m.start("name"), m.start("name") + len(name), "place", 0.8,
                                   note="Ortsname nach Einrichtung (Krankenhaus, Gericht ...)"))
         return out
@@ -385,7 +390,7 @@ class RuleDetector:
             out.append(self._span(para, got[0], got[1], "person", 0.8, role=role, tokens=got[2], trigger="title"))
         for rx, role in self.person_ctx:
             for m in rx.finditer(n):
-                got = self.take_name(n, m.end())
+                got = self.take_name(n, m.end(), greedy=True)
                 if got:
                     out.append(self._span(para, got[0], got[1], "person", 0.8, role=role, tokens=got[2],
                                           trigger="context"))
@@ -418,8 +423,14 @@ class RuleDetector:
                 if chosen and w_ in ("&", "+", "und"):
                     chosen.append(t)
                     continue
-                if re.search(r"[,;:)(\"]$", w_) or re.match(r"[(\"]", w_):
+                if re.search(r"[,;:)(\"]$", w_):
                     break
+                if re.match(r"[(\"]", w_):  # "(Dorf Gastronomie AG)": take the word, then stop
+                    if re.fullmatch(rf"[(\"][{UPPER}][\w'.&+-]*", w_) and w_[1:] not in self.stop:
+                        chosen.append(t)
+                    break
+                if any(rx.fullmatch(w_) for rx in self.role_nouns):
+                    break  # "Mieterin Dorfkrug Gastronomie AG"
                 capital = bool(re.fullmatch(rf"[{UPPER}][\w'.&+-]*|\d+[A-Za-z][\w'.&+-]*", w_))
                 if not capital or (w_ in self.stop and w_ not in self.activity):
                     break
@@ -436,6 +447,8 @@ class RuleDetector:
             if not core:
                 continue
             ns, ne = offset + chosen[0].start(), offset + chosen[-1].end()
+            if n[ns] in "(\"":
+                ns += 1
             activity = []
             for t in reversed(chosen):
                 if t.group() in self.activity:

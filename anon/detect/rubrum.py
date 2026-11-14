@@ -178,10 +178,7 @@ class RubrumParser:
                 state = self._content(line, line.start + m.end(), "rep_name", spans) or "rep_name"
                 continue
             if not stripped:
-                if state in ("party_name", "rep_name"):
-                    continue
-                state = None
-                continue
+                continue  # empty paragraphs separate Rubrum lines (StGH layout); they do not end a block
             block_lines += 1
             expecting_name = state in ("party_name", "rep_name")
             terminated = any(rx.match(stripped) for rx in self.terminators)
@@ -199,11 +196,12 @@ class RubrumParser:
             elif state in ("party_name", "rep_name"):
                 state = self._content(line, line.start, state, spans) or state
             elif self._address_like(text) or any(rx.search(text) for rx in self.extra_lines):
+                generic = not self._address_like(text)  # "Rechtsanwalt": deleted, but no search form
                 ns, ne = self._trim(line.para.norm, line.start, line.end)
                 if line.start > 0:
                     ns = line.start - 1  # include the line break before an address line
                 if ne > ns:
-                    spans.append(self._span(line.para, ns, ne, "address_tail", 0.9,
+                    spans.append(self._span(line.para, ns, ne, "address_tail", 0.9, generic=generic,
                                             rep=state == "rep_addr", note="Adresszeile im Rubrum"))
             else:
                 state = None
@@ -259,8 +257,12 @@ class RubrumParser:
             self._authority_party = True
             return [self._keep(para, name_s, ne)]  # authority party: name and address stay
         stop = self.cfg.gazetteers.stopwords
-        if all(t in stop or not t[:1].isupper() for t in name.split()):
+        toks = name.split()
+        if all(t in stop or not t[:1].isupper() for t in toks):
             return []  # "der Beschwerdeführerin" is a role, not a name
+        lower = [t for t in toks if t[:1].islower() and t not in ("und", "&", "von", "van", "de", "der", "zu")]
+        if len(toks) > 8 or len(lower) > 1:
+            return []  # a sentence, not a name
         out: list[Span] = []
         lf = self.legal_end.search(name)
         maiden = None
@@ -278,6 +280,10 @@ class RubrumParser:
             out.append(self._span(para, name_s, name_e, "person", conf, role="party", **meta))
         tail_s, tail_e = self._trim(norm, name_end, ne)
         if tail_e > tail_s and re.search(r"\w", norm[tail_s:tail_e]):
+            line_end = norm.find("\n", ne)
+            line_end = len(norm) if line_end < 0 else line_end
+            if not norm[ne:line_end].strip(_TRAIL):
+                tail_e = line_end  # tail runs to the end of the line: take trailing ", " along
             out.append(self._span(para, name_end, tail_e, "address_tail", conf, note="Adresse/Angaben im Rubrum"))
         return out
 

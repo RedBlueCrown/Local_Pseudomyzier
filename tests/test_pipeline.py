@@ -483,3 +483,47 @@ def test_ogh_bench_and_inline_rubrum(tmp_path):
     text = _accepted_text(docx)
     assert "der klagenden Partei A, gegen die beklagte Partei B Anstalt, wegen" in text
     assert "Frick und Schumacher; A." in text
+
+
+def test_real_world_rubrum_layouts(tmp_path):
+    """Layouts seen in the court's files (synthetic names): StGH blocks with
+    empty paragraphs, 'Revisionswerber/' + address-only continuation,
+    'betreffend:' as party label, authority party with address kept."""
+    body = [
+        "Der Staatsgerichtshof hat in seiner Sitzung, an welcher teilnahmen: Präsident Dr. Hugo Hoch als "
+        "Vorsitzender; Prof. Ben Schind als Richter sowie Dr. Tobi Will als Schriftführer, in der Beschwerdesache",
+        "Beschwerdeführerin: \tAlabaster Anstalt", "", "\tKlomiweg 2", "", "\t9496 Balzers", "",
+        "\tvertreten durch:", "", "\tDr. Filippina Beck", "\tRechtsanwältin", "\t9494 Schaan", "",
+        "Revisionswerber/\tHans Müller, Hofstrasse 4, ",
+        "Revisionsgegner:\tSVN-2250 Ptuj",
+        "Revisionswerberin/\tLiechtensteinische Invalidenversicherung, Revisionsgegnerin:\tGerberweg 2, 9490 Vaduz",
+        "betreffend:\tMario Bezo, geboren am 20.10.1974 in Salzburg, ",
+        "\tkroatischer Staatsangehöriger, dzt. im Landesgefängnis, Gewerbeweg 4, 9490 Vaduz",
+        "wegen:\tAuslieferung",
+        "SACHVERHALT",
+        "Die Alabaster Anstalt und Hans Müller, dem am 10.10.1990 geborenen Versicherten, sowie Mario Bezo. "
+        "Die Rechtsanwältin Dr. Beck. Die Invalidenversicherung, Gerberweg 2, 9490 Vaduz, entschied.",
+    ]
+    analysis, docx, _, _ = _review(tmp_path, make_docx(body=body))
+    text = _accepted_text(docx)
+    compact = re.sub(r"[ \t]+", " ", text)
+    assert "Beschwerdeführerin: A Anstalt\n\n \n\n \n\n vertreten durch:\n\n ***\n \n \n" in compact
+    assert "Revisionswerber/ B\nRevisionsgegner: \n" in compact
+    assert "Liechtensteinische Invalidenversicherung, Revisionsgegnerin:\tGerberweg 2, 9490 Vaduz" in text
+    assert "betreffend: C\n \nwegen" in compact
+    assert "Die A Anstalt und B, dem am *** geborenen Versicherten, sowie C. Die Rechtsanwältin Dr. ***." in text
+    names = {p.name for p in analysis.keep_people}
+    assert {"Hugo Hoch", "Ben Schind", "Tobi Will"} <= names
+
+
+def test_cited_scholars_and_publication_places_are_kept(tmp_path):
+    body = ["Beschwerdeführer:\tAlbert Kaiser, Dorfstrasse 5, 9490 Vaduz", "I. Sachverhalt",
+            "Albert Kaiser rügte dies (siehe Klaus A. Vallender, Handels- und Gewerbefreiheit, in: Kley/Vallender "
+            "[Hrsg.], Grundrechtspraxis, LPS Bd. 52, Schaan 2012, 265; vgl. auch Herbert Wille, Liechtensteinisches "
+            "Verwaltungsrecht, LPS Bd. 38, Schaan 2004, 57; Pierre Tschannen/Markus Müller/ Markus Kern, "
+            "Allgemeines Verwaltungsrecht, 5. Auflage, Bern 2022, Rz. 448)."]
+    _, docx, _, _ = _review(tmp_path, make_docx(body=body))
+    text = _accepted_text(docx)
+    assert "A rügte dies (siehe Klaus A. Vallender" in text
+    for kept in ("Herbert Wille", "Markus Kern", "Schaan 2012", "Bern 2022"):
+        assert kept in text, kept

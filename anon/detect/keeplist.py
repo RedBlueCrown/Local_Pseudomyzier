@@ -258,7 +258,7 @@ class KeepList:
                 for m in rx.finditer(para.norm):
                     s_, e_ = para.to_orig(m.start(), m.end())
                     out.append(Span(para.part, para.index, s_, e_, para.text[s_:e_], KEEP_KIND, "keep", 1.0,
-                                    role="cited_case", meta={"strength": "strong"}))
+                                    role="cited_case", meta={"strength": "strong", "dynamic": True}))
         return out
 
     def _add(self, people, spans, para: Paragraph, ns: int, ne: int, toks: list[str], role: str) -> None:

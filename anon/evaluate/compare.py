@@ -60,7 +60,8 @@ class Change:
     i2: int
     before: list[str]
     after: list[str]
-    kind: str = "entity"  # entity | passage
+    kind: str = "entity"  # entity | passage | other
+    before_ctx: str = ""  # input token just before the change
     category: str = "?"
     status: str = ""  # matched | missed | passage | extra
     exact: bool = False
@@ -72,8 +73,34 @@ def diff(a: list[Tok], b: list[Tok]) -> list[Change]:
     for op, i1, i2, j1, j2 in sm.get_opcodes():
         if op == "equal":
             continue
-        out.append(Change(i1, i2, [t.text for t in a[i1:i2]], [t.text for t in b[j1:j2]]))
+        before = [t.text for t in a[i1:i2]]
+        after = [t.text for t in b[j1:j2]]
+        if not [x for x in before + after if x != PARA]:
+            continue  # only paragraph structure differs
+        out.append(Change(i1, i2, before, after, before_ctx=a[i1 - 1].text if i1 > 0 else ""))
     return out
+
+
+def _words(tokens: list[str]) -> list[str]:
+    return [t for t in tokens if t != PARA and re.match(r"\w|\*", t)]
+
+
+def _non_anonymisation(c: Change) -> str | None:
+    """Gold changes that are not anonymisation: added text, editorial fixes
+    (incl. corruption in the pseudonymised input), names the gold kept."""
+    before, after = _words(c.before), _words(c.after)
+    if not before and after:
+        return "added"
+    if not before and not after:
+        return "editorial"
+    if all(t.isdigit() for t in before + after) and c.before_ctx == "\ufffc":
+        return "editorial"  # field result (page number) next to field characters
+    anon_like = any(LETTER_RE.match(t) or t == "***" or t.isdigit() for t in after)
+    if not anon_like and all(t[:1].islower() for t in before + after):
+        return "editorial"  # "zur Esche" stays a passage below; "ist", "vNovaussichtlichem"
+    if after and not anon_like and all(t[:1].isupper() for t in after) and all(t[:1].isupper() for t in before):
+        return "gold_kept_name"  # gold made from the real original left this name unchanged
+    return None
 
 
 def _is_passage(c: Change, max_entity_tokens: int) -> bool:
@@ -117,22 +144,24 @@ class DocResult:
     stats: dict = field(default_factory=dict)
 
 
-def _token_categories(toks: list[Tok], analysis) -> list[str]:
-    """Category of the tool mention covering each input token (or '')."""
-    spans: dict[tuple[str, int], list[tuple[int, int, str]]] = {}
+def _token_categories(toks: list[Tok], analysis) -> tuple[list[str], list[bool]]:
+    """Category of the tool mention covering each input token (or '') and
+    whether that mention is only a comment ("Prüfen")."""
+    spans: dict[tuple[str, int], list[tuple[int, int, str, bool]]] = {}
     cat = {e.id: e.category for e in analysis.entities}
     for m in analysis.mentions:
         s = m.span
-        spans.setdefault(s.key, []).append((s.start, s.end, cat.get(s.meta.get("entity"), "?")))
-    out = []
+        spans.setdefault(s.key, []).append((s.start, s.end, cat.get(s.meta.get("entity"), "?"), not m.change))
+    cats, flagged = [], []
     for t in toks:
-        hit = ""
-        for s, e, c in spans.get((t.part, t.para), ()):
+        hit, flag = "", False
+        for s, e, c, comment in spans.get((t.part, t.para), ()):
             if s < t.end and t.start < e:
-                hit = c
+                hit, flag = c, comment
                 break
-        out.append(hit)
-    return out
+        cats.append(hit)
+        flagged.append(flag)
+    return cats, flagged
 
 
 def compare_pair(input_bytes: bytes, gold_bytes: bytes, tool_bytes: bytes, analysis, name: str,
@@ -140,7 +169,7 @@ def compare_pair(input_bytes: bytes, gold_bytes: bytes, tool_bytes: bytes, analy
     a = tokens(DocxPackage.from_bytes(input_bytes))
     g = tokens(DocxPackage.from_bytes(gold_bytes))
     t = tokens(DocxPackage.from_bytes(tool_bytes))
-    cats = _token_categories(a, analysis)
+    cats, flagged = _token_categories(a, analysis)
     res = DocResult(name)
     res.gold = diff(a, g)
     res.tool = diff(a, t)
@@ -151,12 +180,18 @@ def compare_pair(input_bytes: bytes, gold_bytes: bytes, tool_bytes: bytes, analy
         if _is_passage(c, max_entity_tokens):
             c.kind, c.status, c.category = "passage", "passage", "passage (2.4)"
             continue
+        other = _non_anonymisation(c)
+        if other:
+            c.kind, c.status, c.category = "other", other, other
+            continue
         hits = [tc for tc in res.tool if _overlap(c, tc)]
         found = [cats[i] for i in range(c.i1, c.i2) if cats[i]]
         c.category = found[0] if found else _guess_category(c)
         if hits:
             c.status = "matched"
             c.exact = any(tc.i1 == c.i1 and tc.i2 == c.i2 and tc.after == c.after for tc in hits)
+        elif any(flagged[i] for i in range(c.i1, c.i2)):
+            c.status = "flagged"  # found, but only as a "Prüfen" comment
         else:
             c.status = "missed"
     for tc in res.tool:
@@ -227,7 +262,12 @@ def run_evaluation(pairs_dir: Path, out_dir: Path, cfg: Config, *, use_ner: bool
     for inp, gold in pairs:
         target = out_dir / inp.stem
         analysis, docx, xlsx = review(inp, cfg, target, use_ner=use_ner, llm=llm)
-        fin = finalize(docx.read_bytes(), read_entities(xlsx), cfg)
+        # simulated reviewer: accepts every change, dismisses every "Prüfen" comment
+        from ..docx_io.finalize import remove_comments as _rc  # noqa: PLC0415
+
+        reviewed = DocxPackage.load(docx)
+        _rc(reviewed, None)
+        fin = finalize(reviewed.to_bytes(), read_entities(xlsx), cfg)
         tool_bytes = fin.data
         if tool_bytes is None:  # leak check failed: compare the accepted review copy anyway
             pkg = DocxPackage.load(docx)
@@ -269,31 +309,35 @@ def run_evaluation(pairs_dir: Path, out_dir: Path, cfg: Config, *, use_ner: bool
 
 def _report_tables(results: list[DocResult]) -> list[str]:
     cats: dict[str, dict[str, int]] = {}
+    def blank():
+        return {"gold": 0, "matched": 0, "flagged": 0, "exact": 0, "missed": 0, "extra": 0}
+
+    other: dict[str, int] = {}
     for r in results:
         for c in r.gold:
-            d = cats.setdefault(c.category, {"gold": 0, "matched": 0, "exact": 0, "missed": 0, "extra": 0})
-            if c.kind == "passage":
-                d["gold"] += 1
+            if c.kind in ("passage", "other"):
+                other[c.status] = other.get(c.status, 0) + 1
                 continue
+            d = cats.setdefault(c.category, blank())
             d["gold"] += 1
-            d["matched" if c.status == "matched" else "missed"] += 1
+            d[c.status] += 1
             d["exact"] += int(c.exact)
         for c in r.tool:
             if c.status == "extra":
-                cats.setdefault(c.category, {"gold": 0, "matched": 0, "exact": 0, "missed": 0, "extra": 0})["extra"] += 1
-    lines = ["## Recall nach Kategorie (ohne 2.4-Passagen)", "",
-             "| Kategorie | Gold-Änderungen | gefunden | Recall | davon exakt | verpasst | Extra (Tool) |",
-             "|---|---|---|---|---|---|---|"]
-    tot = {"gold": 0, "matched": 0, "exact": 0, "missed": 0, "extra": 0}
+                cats.setdefault(c.category, blank())["extra"] += 1
+    lines = ["## Recall nach Kategorie (ohne 2.4-Passagen und Nicht-Anonymisierungen)", "",
+             "| Kategorie | Gold-Änderungen | geändert | Recall | davon exakt | nur Prüfhinweis | verpasst | "
+             "Extra (Tool) |", "|---|---|---|---|---|---|---|---|"]
+    tot = blank()
     for cat, d in sorted(cats.items()):
-        if cat == "passage (2.4)":
-            continue
         for k in tot:
             tot[k] += d[k]
         lines.append(f"| {cat} | {d['gold']} | {d['matched']} | {_pct(d['matched'], d['gold'])} | "
-                     f"{_pct(d['exact'], d['matched'])} | {d['missed']} | {d['extra']} |")
+                     f"{_pct(d['exact'], d['matched'])} | {d['flagged']} | {d['missed']} | {d['extra']} |")
     lines.append(f"| **gesamt** | {tot['gold']} | {tot['matched']} | {_pct(tot['matched'], tot['gold'])} | "
-                 f"{_pct(tot['exact'], tot['matched'])} | {tot['missed']} | {tot['extra']} |")
+                 f"{_pct(tot['exact'], tot['matched'])} | {tot['flagged']} | {tot['missed']} | {tot['extra']} |")
+    lines += ["", f"Recall inkl. Prüfhinweise: {_pct(tot['matched'] + tot['flagged'], tot['gold'])}",
+              "Nicht als Anonymisierung gezählt: " + ", ".join(f"{k}={v}" for k, v in sorted(other.items()))]
     passages = sum(1 for r in results for c in r.gold if c.kind == "passage")
     la = sum(r.letters_agree for r in results)
     lt = sum(r.letters_total for r in results)
@@ -314,10 +358,14 @@ def _report_doc(r: DocResult) -> list[str]:
              f"Entitäten {r.stats.get('entities')}, Änderungen {r.stats.get('changes')}, "
              f"Prüfhinweise {r.stats.get('comments')}", ""]
     missed = [c for c in r.gold if c.status == "missed"]
+    flagged = [c for c in r.gold if c.status == "flagged"]
     passages = [c for c in r.gold if c.kind == "passage"]
+    others = [c for c in r.gold if c.kind == "other"]
     inexact = [c for c in r.gold if c.status == "matched" and not c.exact]
     extra = [c for c in r.tool if c.status == "extra"]
     for title, items in (("Verpasst (im Gold geändert, Tool nicht)", missed),
+                         ("Nur als Prüfhinweis markiert (Gold hat geändert)", flagged),
+                         ("Keine Anonymisierung (Ergänzungen, Korrekturen, im Gold belassene Namen)", others),
                          ("Extra (Tool geändert, Gold nicht – oft Gold-Versäumnis, manuell prüfen)", extra),
                          ("Gefunden, aber anders ersetzt (u. a. menschliche Flüchtigkeitsfehler im Gold)", inexact),
                          ("2.4-Passagen im Gold (Tool soll nur vorschlagen)", passages)):

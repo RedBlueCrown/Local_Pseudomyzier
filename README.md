@@ -152,36 +152,84 @@ independent LibreOffice (UNO) check of accept/reject and PDF conversion
 plots, legal forms, headers/footers/footnotes, metadata, leak check, xlsx
 round trip, LLM allow-list and fail-safe.
 
-## Status and open points
+## Status and evaluation
 
-* **The real test documents were not available** in the build environment,
-  so the gold pairs could not be diffed and no recall numbers exist yet. The
-  rules were built from the brief and checked on synthetic decisions with
-  fake names. First step on site: put the files into `testdata/`, run
-  `anon evaluate`, and tune `rules.yaml`/gazetteers from the report.
-* **NER was not run with real weights** here (Hugging Face was unreachable
-  from the build environment). The integration is tested with a stub
-  backend. The GLiNER2 PII model id `fastino/gliner2-privacy-filter-PII-multi`
-  is taken from the `gliner2` package documentation; `setup-models` verifies
-  it and its licence before downloading. Its label names may need adjusting
-  in `ner.labels`.
+Evaluated on the three gold pairs (VGH 2026.21, RS 2025.177, SV 2025.13),
+rules and gazetteers only (no NER weights were available in the build
+environment):
 
-Assumptions made beyond the brief (all switchable):
+| | |
+|---|---|
+| Recall of anonymisation changes (excl. 2.4 passages) | 169 / 169 (100 %) |
+| …with the same replacement text as the gold | 85 % (rest: human slips such as `1Auflandungsarbeiten`, `CC AG` vs `C AG`, deleted vs. `***`) |
+| Changes the gold does not have | 1 (a `Vaduz` the gold missed) |
+| Letter sequence agreement | 12 / 15 (the gold itself departs from first-mention order) |
+| Leak check after review | passes on all six inputs |
 
-* The court seat in the date line (`Vaduz, 10. Juni 2026`) is kept
-  (`keeplist.yaml: court_seat_lines`).
-* A municipal authority that is a party (`Gemeinde Vaduz`) is kept as a
-  whole (`policy.keep_municipal_authorities`).
+Not counted as anonymisation: 2 guideline-2.4 passage deletions (`[…]`, the
+tool only suggests these), 8 editorial changes (grammar, corrupted words in
+the pseudonymised input such as `vNovaussichtlichem`), 4 names the gold kept
+(the two treating doctors in SV), 1 added descriptor block. The three StGH
+decisions have no gold; their review copies were checked by hand
+(judges, clerk, cited scholars and authorities stay; parties, companies,
+representatives, witnesses, places, plots and IDs are replaced).
+
+The rules were tuned on these documents. Expect new patterns in other
+decisions: run `anon evaluate` on every new gold pair and extend
+`rules.yaml` / gazetteers accordingly.
+
+### Rules learned from the guideline and the gold files (beyond the brief)
+
+* Birth-date generalisation is *year + 1* (`10.08.2000 → vor dem Jahr 2001`).
+* `Gemeinde Vaduz` as a place designation is anonymised (`Gemeinde ***`);
+  only an authority that is a party in the Rubrum is kept, with its address
+  (`Liechtensteinische Invalidenversicherung, Gerberweg 2, 9490 Vaduz`).
+* Benches name roles before *or after* the names (`Dr. Marc Bauer als
+  Richter; Daniela Kollerer als Schriftführerin`, `Oberstrichterinnen …
+  als weitere Mitglieder`); the copy is signed after `Für die Richtigkeit
+  der Ausfertigung`. `seinen Präsidenten X` is not a judge.
+* Rubrum variants: `Revisionswerber/` + address-only continuation line,
+  `betreffend:` as party label, `Interessierte Parteien: 1. … 2. …`,
+  `Belangte Behörde:` (kept), blocks spread over empty paragraphs,
+  profession/nationality/detention lines deleted with the address.
+* Cited scholars appear as `siehe Hugo Vogt, Titel, in: Kley/Vallender
+  [Hrsg.], …, LPS Bd. 52, Schaan 2012` and author lists `A/B/ C, Titel`;
+  publication places (`Bern 2022`) stay. Applicants and places of cited
+  ECHR decisions stay (places there become questions, not changes).
+* Field names also unquoted after `Feldweg`; water bodies (`Esche`) and
+  clinic/prison/court towns (`Krankenhaus Urm`, `Gemeindegericht in
+  Zagreb`) are places; `Plan Nr. …` is an identifier; plots also in
+  compounds (`Strassengrundstück Nr. 8965`).
+
+### Open points
+
+* **NER was not run with real weights** (Hugging Face is unreachable from
+  the build environment). The integration is tested with a stub backend.
+  The GLiNER2 PII model id `fastino/gliner2-privacy-filter-PII-multi` is
+  taken from the `gliner2` package documentation; `setup-models` verifies
+  it and its licence before downloading. Label names may need adjusting in
+  `ner.labels`.
+* The LLM layer is tested against a fake local endpoint only.
+* Review copies were validated structurally and in LibreOffice; opening them
+  in Microsoft Word is still to be confirmed on site.
+
+### Assumptions (all switchable)
+
+* The court seat in the date line (`Vaduz, 24.06.2026`) is kept
+  (`keeplist.yaml: court_seat_lines`); so are court/authority seats
+  (`Fürstliches Landgericht, Abteilung 8, Vaduz`).
 * Representatives are replaced as a whole block in the Rubrum (`***`); in the
   body titles stay (`Rechtsanwalt Dr. ***`).
-* Address lines in their own paragraph/table cell are deleted, leaving an
-  empty paragraph (paragraph marks are not deleted).
+* Address lines in their own paragraph/table cell are emptied; paragraph
+  marks are not deleted.
 * Tracked changes already present in the input are accepted before
   processing; all comments are removed on finalize (`finalize.remove_all_comments`).
-* Unresolved `Prüfen` comments block finalize until they are deleted,
-  resolved, or the entity is set to `keep` in the Excel file.
-* Plot numbers found outside a plot context, ambiguous place names
-  (`Planken`, `Eschen`, `Steg`, `Maurer` …) and bare surnames shared by two
-  entities or by a judge are comments, not changes.
-* Comments are not possible in headers/footers (Word limitation); uncertain
-  items there are listed in the summary table instead.
+* Open `Prüfen` comments block finalize until they are deleted, resolved, or
+  the entity is set to `keep` in the Excel file. A change that was only
+  partly rejected (deletion rejected, insertion kept) or whose inserted text
+  was edited also blocks.
+* Ambiguous place names (`Planken`, `Eschen`, `Steg`, `Maurer` …), bare
+  surnames shared by two entities, a judge or a citation, and plot numbers
+  outside a plot context are questions, not changes.
+* In headers/footers Word allows no comments; uncertain items there are
+  proposed as tracked changes by `Prüfen`.

@@ -8,6 +8,7 @@ finalize() review copy -> clean export, with leak check
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -120,6 +121,7 @@ def analyse(data: bytes, cfg: Config, *, use_ner: bool = True, ner: NerDetector 
         candidates += ner_spans
     else:
         stats["ner"] = "off"
+    _soften_cited_context(doc, candidates, keep_spans)
     candidates = apply_keep(candidates, keep_spans)
     selected, swallowed = resolve_overlaps(candidates)
     builder = EntityBuilder(cfg, doc)
@@ -165,6 +167,20 @@ def analyse(data: bytes, cfg: Config, *, use_ner: bool = True, ner: NerDetector 
     })
     stats["passages"] = len(passages)
     return Analysis(pkg, doc, entities, mentions, people, stats, notes, passages)
+
+
+_CITED_COURT = re.compile(r"\b(?:EGMR|EuGH|EFTA-(?:Gerichtshof|GH)|Gerichtshofs?\s+für\s+Menschenrechte|Bsw\.)")
+
+
+def _soften_cited_context(doc: Document, candidates: list[Span], keep_spans: list[Span]) -> None:
+    """Places in a paragraph about a cited ECHR/CJEU/EFTA decision belong to that
+    decision (guideline 2.6): ask instead of changing."""
+    cited = {k.key for k in keep_spans if k.role == "cited_case" and not k.meta.get("dynamic")}
+    cited |= {p.pid for p in doc.paragraphs if _CITED_COURT.search(p.norm)}
+    for c in candidates:
+        if c.key in cited and c.kind in ("place", "place_adj", "address", "fieldname") and c.source != "rubrum":
+            c.confidence = min(c.confidence, 0.5)
+            c.meta["note"] = "Ort im Zusammenhang mit einer zitierten Entscheidung"
 
 
 def _count_by_category(mentions: list[Mention], entities: list[Entity]) -> dict[str, int]:

@@ -7,7 +7,9 @@ from functools import lru_cache
 
 UPPER = "A-ZÄÖÜÉÈÀÂÊÎÔÛÇÑŠŽČĆĐ"
 LOWER = "a-zäöüßéèàâêîôûçñšžčćđëïáíóúýğış"
-NAME_WORD = rf"[{UPPER}][{LOWER}']+(?:-[{UPPER}][{LOWER}']+)*"
+# an apostrophe only inside a name ("D'Amato" style is rare); a trailing quote
+# or genitive apostrophe is not part of it ("Brunhart'")
+NAME_WORD = rf"[{UPPER}][{LOWER}]+(?:'[{LOWER}]+)*(?:-[{UPPER}][{LOWER}]+(?:'[{LOWER}]+)*)*"
 CAPS_WORD = rf"[{UPPER}]{{2,}}(?:-[{UPPER}]{{2,}})*"
 INITIAL = rf"[{UPPER}]\."
 PARTICLES = ["von der", "van der", "van den", "de la", "von", "van", "de", "del", "della", "di", "da", "dos",

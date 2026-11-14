@@ -107,8 +107,10 @@ llm:
 detect:
   rubrum:
     # Label recognition stops at the first paragraph matching one of these.
+    # Case-insensitive. The Rubrum also ends where the operative part starts.
     end_markers:
-      - '^\s*(?:[IVX]+\.|[A-Z]\.|\d+\.)?\s*(?:Sachverhalt|Tatbestand|Begründung|Entscheidungsgründe|Erwägungen|Zum Sachverhalt)\b'
+      - '(?i)^\s*(?:[IVX]+\.|[A-Z]\.|\d+\.)?\s*(?:Sachverhalt|Tatbestand|Begründung|Entscheidungsgründe|Erwägungen|Zum Sachverhalt)\b'
+      - '(?i)^\s*(?:zu\s+Recht\s+erkannt|(?:den\s+)?beschlossen|erkannt|entschieden)\s*:'
     max_paragraphs: 150
     # Party labels at the start of a line (optionally numbered, followed by ":" or tab).
     party_labels:
