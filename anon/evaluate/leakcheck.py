@@ -41,7 +41,7 @@ class Hit:
     category: str
     part: str
     para: int | None
-    status: str  # leak | kept_by_reviewer | rejected_by_reviewer | resolved_comment | keep_list
+    status: str  # leak | kept_by_reviewer | rejected_by_reviewer | resolved_comment | keep_list | tool_replacement
 
 
 @dataclass
@@ -69,12 +69,37 @@ class LeakReport:
         return lines
 
 
-def _regex(term: str) -> re.Pattern:
-    t = normalise_simple(term).strip()
-    if is_numeric_form(t):
-        return re.compile(NUM_LEFT + re.escape(t) + NUM_RIGHT)
-    body = re.escape(t).replace(r"\ ", r"\s+")
-    return re.compile(NAME_LEFT + body + NAME_RIGHT, re.I)
+_STRUCTURAL = re.compile(r"^[\d\s.,:;+%-]*$")
+
+
+class _Matcher:
+    """All terms folded into two regexes (names: case-insensitive, hyphen is a
+    word character; numbers: digit boundaries). Longest term wins."""
+
+    def __init__(self, terms: list[Term]):
+        self.by_key: dict[str, list[Term]] = {}
+        names, numbers = [], []
+        for t in terms:
+            text = " ".join(normalise_simple(t.text).split())
+            if len(text) < 2:
+                continue
+            self.by_key.setdefault(text.casefold(), []).append(t)
+            (numbers if is_numeric_form(text) else names).append(text)
+        self.res = []
+        if names:
+            body = "|".join(re.escape(x).replace(r"\ ", r"\s+") for x in sorted(set(names), key=len, reverse=True))
+            self.res.append(re.compile(NAME_LEFT + "(?:" + body + ")" + NAME_RIGHT, re.I))
+        if numbers:
+            body = "|".join(re.escape(x) for x in sorted(set(numbers), key=len, reverse=True))
+            self.res.append(re.compile(NUM_LEFT + "(?:" + body + ")" + NUM_RIGHT))
+
+    def finditer(self, text: str):
+        for rx in self.res:
+            for m in rx.finditer(text):
+                terms = self.by_key.get(" ".join(m.group().split()).casefold(), [])
+                if terms:
+                    # a term the reviewer kept wins over one that was not
+                    yield m, sorted(terms, key=lambda t: not t.kept)[0]
 
 
 def _inside(ranges, part: str, para: int, s: int, e: int) -> bool:
@@ -84,8 +109,9 @@ def _inside(ranges, part: str, para: int, s: int, e: int) -> bool:
 def check(pkg: DocxPackage, doc: Document, terms: list[Term], tool_ranges: list[ToolRange],
           pending: set[int], comment_states: dict[int, str], keep_spans: list[Span]) -> LeakReport:
     report = LeakReport()
-    compiled = [(t, _regex(t.text)) for t in terms if len(t.text.strip()) >= 2]
+    matcher = _Matcher(terms)
     rejected = [(r.part, r.para, r.start, r.end) for r in tool_ranges if r.kind == "R" and r.item not in pending]
+    replaced = [(r.part, r.para, r.start, r.end) for r in tool_ranges if r.kind == "R" and r.item in pending]
     resolved = [(r.part, r.para, r.start, r.end) for r in tool_ranges
                 if r.kind == "C" and comment_states.get(r.item, "deleted") != "open"]
     keeps = [(k.part, k.para, k.start, k.end) for k in keep_spans
@@ -93,29 +119,31 @@ def check(pkg: DocxPackage, doc: Document, terms: list[Term], tool_ranges: list[
     story = {part for part, _ in pkg.story_parts()}
 
     for para in doc.paragraphs:
-        for term, rx in compiled:
-            for m in rx.finditer(para.norm):
-                s, e = para.to_orig(m.start(), m.end())
-                if term.kept:
-                    status = "kept_by_reviewer"
-                elif _inside(rejected, para.part, para.index, s, e):
-                    status = "rejected_by_reviewer"
-                elif _inside(resolved, para.part, para.index, s, e):
-                    status = "resolved_comment"
-                elif _inside(keeps, para.part, para.index, s, e):
-                    status = "keep_list"
-                else:
-                    status = "leak"
-                report.hits.append(Hit(term.entity, term.category, para.part, para.index, status))
+        for m, term in matcher.finditer(para.norm):
+            s, e = para.to_orig(m.start(), m.end())
+            if term.kept:
+                status = "kept_by_reviewer"
+            elif _inside(replaced, para.part, para.index, s, e):
+                status = "tool_replacement"  # e.g. plot 10 renumbered to 10: text written by the tool
+            elif _inside(rejected, para.part, para.index, s, e):
+                status = "rejected_by_reviewer"
+            elif _inside(resolved, para.part, para.index, s, e):
+                status = "resolved_comment"
+            elif _inside(keeps, para.part, para.index, s, e):
+                status = "keep_list"
+            else:
+                status = "leak"
+            report.hits.append(Hit(term.entity, term.category, para.part, para.index, status))
 
-    # hidden places: attributes and field codes in story parts, everything elsewhere
+    # hidden places: text-bearing attributes and field codes in story parts,
+    # all text and attributes elsewhere (properties, settings, relationships ...)
     for name in pkg.iter_xml_parts():
         root = pkg.xml(name)
         chunks: list[str] = []
         for el in root.iter():
             if not isinstance(el.tag, str):
                 continue
-            chunks.extend(v for k, v in el.attrib.items() if not k.startswith("{http://www.w3.org/2000/xmlns"))
+            chunks.extend(v for v in el.attrib.values() if not _STRUCTURAL.match(v))
             if name in story:
                 if el.tag in (w("instrText"), w("delText"), w("delInstrText")) and el.text:
                     chunks.append(el.text)
@@ -124,10 +152,13 @@ def check(pkg: DocxPackage, doc: Document, terms: list[Term], tool_ranges: list[
         if not chunks:
             continue
         blob = normalise_simple("\n".join(chunks))
-        for term, rx in compiled:
-            if rx.search(blob):
-                status = "kept_by_reviewer" if term.kept else "leak"
-                report.hits.append(Hit(term.entity, term.category, name, None, status))
+        seen: set[str] = set()
+        for m, term in matcher.finditer(blob):
+            if term.entity in seen:
+                continue
+            seen.add(term.entity)
+            report.hits.append(Hit(term.entity, term.category, name, None,
+                                   "kept_by_reviewer" if term.kept else "leak"))
     return report
 
 

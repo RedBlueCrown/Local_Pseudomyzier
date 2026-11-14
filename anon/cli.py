@@ -18,7 +18,9 @@ import typer
 
 from .config import load_config
 
-app = typer.Typer(add_completion=False, no_args_is_help=True, help="On-prem anonymisation of court decisions.")
+# show_locals=False: a crash must never print document text from local variables
+app = typer.Typer(add_completion=False, no_args_is_help=True, pretty_exceptions_show_locals=False,
+                  help="On-prem anonymisation of court decisions.")
 log = logging.getLogger("anon")
 
 

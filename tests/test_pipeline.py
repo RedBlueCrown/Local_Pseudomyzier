@@ -434,3 +434,11 @@ def test_letters_beyond_z(tmp_path, letters):
     assert reps[:3] == ["A", "B", "C"]
     if letters > 26:
         assert reps[26:28] == ["AA", "AB"]
+
+
+def test_small_plot_numbers_do_not_collide_with_xml_ids(tmp_path):
+    # w:id attributes of revisions/bookmarks are small integers too; they are not leaks
+    body = ["I. Sachverhalt"] + [f"Herr Na{chr(97 + i)}mann besitzt Grundstück Nr. {i + 1}." for i in range(12)]
+    analysis, docx, xlsx, cfg = _review(tmp_path, make_docx(body=body))
+    result = finalize(docx.read_bytes(), read_entities(xlsx), cfg)
+    assert result.data is not None, result.report.summary_lines()
