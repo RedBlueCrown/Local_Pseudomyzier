@@ -9,10 +9,10 @@
 # of names ("Richter Dr. Hugo Vogt, lic. iur. Thomas Hasler und Dr. Nicole Beck").
 judges:
   triggers:
-    - '\b(?:Vize)?[Pp]räsident(?:in|en|innen)?\b'
+    - '\b(?:Vize)?[Pp]räsident(?:in|en|innen)?\b(?:\s+de[sr]\s+(?:Fürstlichen\s+)?(?:Staatsgerichtshof|Verwaltungsgerichtshof|Obergericht|Landgericht|Obersten\s+Gerichtshof|Gerichtshof|Senat)e?s?)?'
     - '\b[Vv]orsitz(?:es)?\s+(?:von|des|der)(?:\s+(?:Vize)?[Pp]räsident(?:in|en)?)?'
     - '\b(?:Senats|Kammer)?[Vv]orsitzende[rn]?\b'
-    - '\b(?:Ersatz|Ober|Land|Fach|Laien|Jugend|Verwaltungs|Einzel|Straf|Zivil)?[Rr]ichter(?:in|innen|n|s)?\b'
+    - '\b(?:Ersatz|Ober|Land|Fach|Laien|Jugend|Verwaltungs|Einzel|Straf|Zivil)?[Rr]ichter(?:in|innen|n|s)?\b(?:\s+de[sr]\s+(?:Fürstlichen\s+)?(?:Staatsgerichtshof|Verwaltungsgerichtshof|Obergericht|Landgericht|Obersten\s+Gerichtshof|Gerichtshof|Senat)e?s?)?'
     - '\bBeisitzer(?:in|innen)?\b'
     - '\bHofr(?:at|ätin)\b'
   clerk_triggers:
@@ -47,8 +47,8 @@ cited_authors:
   - '\b[A-ZÄÖÜ][\w''-]+(?:/[A-ZÄÖÜ][\w''-]+)+\b'
   - '\b[A-ZÄÖÜ][\w''-]+(?=,?\s+in:\s)'
   - '\b[A-ZÄÖÜ][\w''-]+(?=\s+in\s+[A-ZÄÖÜ][\w''-]+(?:/[A-ZÄÖÜ][\w''-]+)*\s*(?:\(Hrsg\.\)|,))'
-  - '\b[A-ZÄÖÜ][\w''-]+(?=,\s[^,.;\n]{3,90},\s(?:\d+\.\s)?(?:Aufl\.|Auflage|Rz\.?|Rn\.?|N\.?\s?\d|S\.\s?\d|\d{4}))'
-  - '(?<=\b(?:vgl\.|siehe|so|ebenso|ähnlich|gl\.M\.|aA|a\.A\.|mwN|m\.w\.N\.)\s)[A-ZÄÖÜ][\w''-]+(?=,\s)'
+  - '\b[A-ZÄÖÜ][\w''-]+(?=,\s[^,.;\n\d]{3,90},\s(?:\d+\.\s)?(?:Aufl\.|Auflage|Rz\.?|Rn\.?|N\.?\s?\d|S\.\s?\d|(?:19|20)\d{2}(?!\s+[A-ZÄÖÜ])))'
+  - '\b(?:vgl\.|siehe|so|ebenso|ähnlich|gl\.M\.|aA|a\.A\.|mwN|m\.w\.N\.)\s+[A-ZÄÖÜ][\w''-]+(?=,\s)'
 
 # Authorities that are a party or whose decision is appealed.
 authorities:

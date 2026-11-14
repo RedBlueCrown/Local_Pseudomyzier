@@ -154,6 +154,21 @@ detect:
       - '\d'
       - '\b(?:c/o|p\.\s?A\.|Postfach|Liechtenstein|Schweiz|Österreich|Deutschland)\b'
     max_block_lines: 8
+    # Inline Rubrum ("in der Rechtssache der klagenden Partei Albert Kaiser, ...").
+    # The name follows directly after the match.
+    inline_party_patterns:
+      - '\b(?:der|die|des|dem|den)\s+(?:erst|zweit|dritt|viert)?(?:klagenden|beklagten|gefährdeten|gefährdenden|betreibenden|verpflichteten|antragstellenden|antragsgegnerischen|beschwerdeführenden|revisionswerbenden|berufungswerbenden|rekurrierenden)\s+Parteie?n?\s+'
+      - '\b(?:Beschwerde|Rechts|Verwaltungs|Straf|Exekutions|Verlassenschafts|Pflegschafts|Ausserstreit|Firmenbuch|Grundbuchs|Rekurs|Berufungs|Revisions)sache\s+(?:des|der)\s+(?!(?:erst|zweit|dritt|viert)?(?:klagenden|beklagten|gefährdeten|gefährdenden|betreibenden|verpflichteten|antragstellenden)\b)'
+      - '\b(?:wider|gegen)\s+(?:die|den|das)\s+(?:(?:erst|zweit|dritt)?(?:beklagte|gefährdende|verpflichtete|antragsgegnerische)\s+Partei|Beschwerdegegnerin|Beschwerdegegner)\s+'
+    # Words stripped from a representative's name to get further search forms.
+    representative_noise:
+      - 'Rechtsanw(?:alt|ältin|älte)'
+      - 'Rechtsanwaltskanzlei'
+      - 'Anwaltskanzlei'
+      - 'Advokaturbüro'
+      - 'Kanzlei'
+      - 'RA'
+      - 'Rechtsanwalts(?:-|\s)?(?:AG|GmbH|Anstalt)'
 
   # Titles stay in the text ("Dr. Nova" -> "Dr. E").
   titles:
