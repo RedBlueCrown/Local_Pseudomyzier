@@ -120,6 +120,7 @@ class KeepList:
             self.authority_res.append(muni)
         self.judge_triggers = compile_list(kl["judges"]["triggers"])
         self.clerk_triggers = compile_list(kl["judges"]["clerk_triggers"])
+        self.postfix = [(role, re.compile(rx)) for role, rx in kl["judges"].get("postfix_roles", {}).items()]
         self.titles_re = re.compile(titles_regex(cfg.detect["titles"]) + r"(?=[\s,]|$)")
         self.stopwords = cfg.gazetteers.stopwords
 
@@ -162,6 +163,22 @@ class KeepList:
                         rest = para.norm[names[-1][1]:].strip(" \t.,;")
                         if not para.norm[line_start : m.start()].strip() and not rest:
                             label_role = role  # "Richter:  Dr. A" -> names may continue below
+            for role, rx in self.postfix:
+                for m in rx.finditer(para.norm):
+                    seg = max(para.norm.rfind(c, 0, m.start()) for c in ";:\n(") + 1
+                    lead = re.compile(r"[ \t]*(?:[a-zäöü]+[ \t]+)*").match(para.norm, seg)
+                    pos = lead.end()
+                    for rx_t in self.judge_triggers + self.clerk_triggers:
+                        t = rx_t.match(para.norm, pos)
+                        if t:
+                            pos = t.end()
+                            break
+                    names = parse_name_list(para.norm, pos, self.titles_re, self.stopwords, max_tokens)
+                    names = [n for n in names if n[1] <= m.start()]
+                    if names and not para.norm[names[-1][1] : m.start()].strip():
+                        found_here = True
+                        for ns, ne, toks in names:
+                            self._add(people, spans, para, ns, ne, toks, role)
             if not found_here and prev_label is not None and para.kind == "document":
                 names = parse_name_list(para.norm, 0, self.titles_re, self.stopwords, max_tokens)
                 if names and not para.norm[names[-1][1]:].strip(" \t.,;"):

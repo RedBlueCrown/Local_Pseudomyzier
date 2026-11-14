@@ -12,9 +12,14 @@ judges:
     - '\b(?:Vize)?[Pp]räsident(?:in|en|innen)?\b(?:\s+de[sr]\s+(?:Fürstlichen\s+)?(?:Staatsgerichtshof|Verwaltungsgerichtshof|Obergericht|Landgericht|Obersten\s+Gerichtshof|Gerichtshof|Senat)e?s?)?'
     - '\b[Vv]orsitz(?:es)?\s+(?:von|des|der)(?:\s+(?:Vize)?[Pp]räsident(?:in|en)?)?'
     - '\b(?:Senats|Kammer)?[Vv]orsitzende[rn]?\b'
-    - '\b(?:Ersatz|Ober|Land|Fach|Laien|Jugend|Verwaltungs|Einzel|Straf|Zivil)?[Rr]ichter(?:in|innen|n|s)?\b(?:\s+de[sr]\s+(?:Fürstlichen\s+)?(?:Staatsgerichtshof|Verwaltungsgerichtshof|Obergericht|Landgericht|Obersten\s+Gerichtshof|Gerichtshof|Senat)e?s?)?'
+    - '\b(?:Ersatz|Ober|Land|Fach|Laien|Jugend|Verwaltungs|Einzel|Straf|Zivil)?[Rr]ichter(?:in|innen|Innen|:innen|\*innen|_innen|n|s)?\b(?:\s+de[sr]\s+(?:Fürstlichen\s+)?(?:Staatsgerichtshof|Verwaltungsgerichtshof|Obergericht|Landgericht|Obersten\s+Gerichtshof|Gerichtshof|Senat)e?s?)?'
     - '\bBeisitzer(?:in|innen)?\b'
     - '\bHofr(?:at|ätin)\b'
+  # Role named AFTER the names ("Dr. Marc Bauer als Richter; Daniela Kollerer
+  # als Schriftführerin"). Names are read from the previous ; : or line start.
+  postfix_roles:
+    judge: '\bals\s+(?:stellvertretende[rn]?\s+|weitere[sn]?\s+)?(?:Vorsitzende[rn]?|(?:Vize)?[Pp]räsident(?:in)?|(?:Ersatz)?[Rr]ichter(?:in|innen)?|Beisitzer(?:in|innen)?|(?:Senats|Kammer)?[Mm]itglied(?:er)?)\b'
+    clerk: '\bals\s+(?:Schriftf(?:ü|ue)hrer(?:in)?|Protokollf(?:ü|ue)hrer(?:in)?|Gerichtsschreiber(?:in)?)\b'
   clerk_triggers:
     - '\bSchriftf(?:ü|ue)hrer(?:in|s)?\b'
     - '\bProtokollf(?:ü|ue)hrer(?:in|s)?\b'

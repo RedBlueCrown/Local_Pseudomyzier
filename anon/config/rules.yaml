@@ -172,7 +172,8 @@ detect:
 
   # Titles stay in the text ("Dr. Nova" -> "Dr. E").
   titles:
-    - 'Univ\.-Prof\.'
+    - 'Univ\.[-\s]?Prof\.'
+    - 'Hon\.[-\s]?Prof\.'
     - 'Prof\.'
     - 'Dr\.\s?med\.(?:\s?dent\.|\s?vet\.)?'
     - 'Dr\.\s?iur\.'

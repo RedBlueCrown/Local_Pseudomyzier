@@ -442,3 +442,32 @@ def test_small_plot_numbers_do_not_collide_with_xml_ids(tmp_path):
     analysis, docx, xlsx, cfg = _review(tmp_path, make_docx(body=body))
     result = finalize(docx.read_bytes(), read_entities(xlsx), cfg)
     assert result.data is not None, result.report.summary_lines()
+
+
+def test_bench_with_roles_after_names_is_kept(tmp_path):
+    intro = ("Der Staatsgerichtshof hat in seiner Sitzung vom 17. März 2025, an welcher teilnahmen: Präsident "
+             "Univ.-Prof. Dr. Peter Bussjäger als Vorsitzender; stellvertretender Präsident Dr. Jürgen Nagel, "
+             "Prof. Dr. Jens Kersten und Dr. Marc Bauer als Richter; Daniela Kollerer als Schriftführerin in der "
+             "Beschwerdesache")
+    body = [intro, "Beschwerdeführer:\tAlbert Kaiser, Dorfstrasse 5, 9490 Vaduz", "I. Sachverhalt",
+            "Kaiser beantragte dies. Die Schriftführerin Kollerer protokollierte; Richter Bauer fragte nach."]
+    analysis, docx, _, _ = _review(tmp_path, make_docx(body=body))
+    names = {p.name for p in analysis.keep_people}
+    assert {"Peter Bussjäger", "Jürgen Nagel", "Jens Kersten", "Marc Bauer", "Daniela Kollerer"} <= names
+    text = _accepted_text(docx)
+    assert intro in text
+    assert "A beantragte dies. Die Schriftführerin Kollerer protokollierte; Richter Bauer fragte nach." in text
+
+
+def test_ogh_bench_and_inline_rubrum(tmp_path):
+    intro = ("Der Oberste Gerichtshof hat als Revisionsgericht durch den Senatsvorsitzenden Präsident Univ.Prof. "
+             "Dr. Hubertus Schumacher sowie die OberrichterInnen Dr. Marie-Theres Frick und Dr. Lothar Hagen als "
+             "weitere Senatsmitglieder, ferner im Beisein der Schriftführerin Astrid Wanger in der Rechtssache der "
+             "klagenden Partei Albert Kaiser, Dorfstrasse 5, 9490 Vaduz, gegen die beklagte Partei Papageien "
+             "Anstalt, Landstrasse 12, 9495 Triesen, wegen CHF 10'000.00 zu Recht erkannt:")
+    analysis, docx, _, _ = _review(tmp_path, make_docx(body=[intro, "Begründung", "Frick und Schumacher; Kaiser."]))
+    assert {"Hubertus Schumacher", "Marie-Theres Frick", "Lothar Hagen", "Astrid Wanger"} <= \
+        {p.name for p in analysis.keep_people}
+    text = _accepted_text(docx)
+    assert "der klagenden Partei A, gegen die beklagte Partei B Anstalt, wegen" in text
+    assert "Frick und Schumacher; A." in text
