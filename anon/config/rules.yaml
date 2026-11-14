@@ -71,22 +71,24 @@ ner:
   chunk_chars: 1500
   # Licences accepted by `anon setup-models` (checked against the model card).
   allowed_licenses: [apache-2.0, mit, bsd-3-clause, bsd-2-clause]
-  # NER label -> internal kind. Labels are passed to the model as given.
+  # NER label -> internal kind. Labels are passed to the model as given; the
+  # GLiNER2 PII model documents snake_case names (person, email, phone_number).
+  # Check the model card after `anon setup-models` and adjust if needed.
   labels:
     person: person
     organization: org
     company: org
     location: place
     address: address
-    date of birth: birthdate
-    phone number: id
+    date_of_birth: birthdate
+    phone_number: id
     email: id
     iban: id
-    bank account number: id
-    social security number: id
-    license plate number: id
-    passport number: id
-    tax identification number: id
+    bank_account_number: id
+    social_security_number: id
+    license_plate: id
+    passport_number: id
+    tax_id: id
 
 llm:
   enabled: false

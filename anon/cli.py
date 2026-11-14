@@ -138,8 +138,7 @@ def setup_models(
         except Exception as exc:
             typer.secho(f"{model_id}: nicht gefunden/erreichbar ({type(exc).__name__})", fg="yellow", err=True)
             continue
-        lic = (getattr(info, "card_data", None) or {}).get("license") if getattr(info, "card_data", None) else None
-        lic = lic or next((t.split(":", 1)[1] for t in (info.tags or []) if t.startswith("license:")), "unknown")
+        lic = _model_license(info)
         typer.echo(f"{model_id}: Lizenz {lic}")
         if str(lic).lower() not in allowed and not allow_license:
             typer.secho(f"  übersprungen: Lizenz nicht in allowed_licenses ({', '.join(sorted(allowed))})",
@@ -152,6 +151,18 @@ def setup_models(
         ok = True
     if not ok:
         raise typer.Exit(code=1)
+
+
+def _model_license(info) -> str:
+    card = getattr(info, "card_data", None) or getattr(info, "cardData", None)
+    lic = None
+    if card is not None:
+        data = card.to_dict() if hasattr(card, "to_dict") else (card if isinstance(card, dict) else {})
+        lic = data.get("license")
+    if not lic:
+        lic = next((t.split(":", 1)[1] for t in (getattr(info, "tags", None) or []) if t.startswith("license:")),
+                   None)
+    return str(lic or "unknown")
 
 
 @app.command()

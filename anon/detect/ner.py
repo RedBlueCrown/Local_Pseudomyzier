@@ -49,13 +49,18 @@ class Gliner2Backend:
         self.model = AutoExtractor.from_pretrained(str(path), map_location="cpu")
 
     def predict(self, text, labels, threshold):
-        res = self.model.extract_entities(text, labels, include_confidence=True, include_spans=True,
-                                          threshold=threshold)
+        kwargs = {"include_confidence": True, "include_spans": True}
+        try:
+            res = self.model.extract_entities(text, labels, threshold=threshold, **kwargs)
+        except TypeError:  # versions without a threshold argument
+            res = self.model.extract_entities(text, labels, **kwargs)
         out = []
-        for label, items in res.get("entities", {}).items():
-            for it in items:
-                if isinstance(it, dict) and "start" in it:
-                    out.append((it["start"], it["end"], label, float(it.get("confidence", 1.0))))
+        for label, items in (res.get("entities") or {}).items():
+            for it in items or []:
+                if isinstance(it, dict) and "start" in it and "end" in it:
+                    score = float(it.get("confidence", 1.0))
+                    if score >= threshold:
+                        out.append((int(it["start"]), int(it["end"]), label, score))
         return out
 
 
