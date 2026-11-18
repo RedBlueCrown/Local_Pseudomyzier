@@ -40,6 +40,7 @@ class Mention:
     replacement: str | None = None
     change: bool = True
     comment: str | None = None
+    reason: str = ""
     item_id: int = 0
     order: tuple = ()
 

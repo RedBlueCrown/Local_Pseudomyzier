@@ -159,7 +159,8 @@ def plan_mentions(entities: list[Entity], cfg: Config, doc_text_of) -> list[Ment
                     reasons.append(m.span.meta["note"])
                 if low and not reasons:
                     reasons.append(f"Konfidenz {m.span.confidence:.2f}")
-                m.comment = _comment_text(e, m, repl, "; ".join(dict.fromkeys(reasons)) or "bitte prüfen")
+                m.reason = "; ".join(dict.fromkeys(reasons)) or "bitte prüfen"
+                m.comment = _comment_text(e, m, repl, m.reason)
             out.append(m)
     out.sort(key=lambda m: m.order)
     for i, m in enumerate(out, 1):

@@ -72,7 +72,9 @@ def apply_keep(candidates: list[Span], keeps: list[Span]) -> list[Span]:
             c.meta["conflict"] = f"auch Name einer Gerichtsperson ({conflict_with.meta.get('person', '')})"
         elif verdict == "cited":
             c.confidence = min(c.confidence, 0.3)
-            c.meta["conflict"] = "steht in einem Zitat (Autor oder zitierte Entscheidung?)"
+            c.meta["conflict"] = ("gleicher Name wie in einer zitierten Entscheidung: Partei oder Zitat?"
+                                  if conflict_with.meta.get("dynamic")
+                                  else "steht in einem Zitat (Autor oder zitierte Entscheidung?)")
         out.append(c)
     return out
 

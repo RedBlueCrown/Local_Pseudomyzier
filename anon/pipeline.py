@@ -396,6 +396,16 @@ def default_decision(m: Mention) -> str:
     return "accept" if m.change else "open"
 
 
+def normalise_decision(m: Mention, decision: str | None) -> str:
+    """Safe changes are accepted/rejected, questions applied/dismissed/open.
+    "Anonymise" and "keep original" mean the same for both kinds."""
+    if not decision:
+        return default_decision(m)
+    if m.change:
+        return {"apply": "accept", "dismiss": "reject", "open": "accept"}.get(decision, decision)
+    return {"accept": "apply", "reject": "dismiss"}.get(decision, decision)
+
+
 def build_reviewed_package(analysis: Analysis, cfg: Config, decisions: dict[str, str],
                            manual: list[ManualEdit], with_summary: bool = True) -> DocxPackage:
     """Write the review copy as the reviewer decided in the app: accepted and
@@ -418,7 +428,7 @@ def build_reviewed_package(analysis: Analysis, cfg: Config, decisions: dict[str,
         s = m.span
         if covered(s):
             continue  # a manual edit replaces this whole passage
-        decision = decisions.get(mention_key(s), default_decision(m))
+        decision = normalise_decision(m, decisions.get(mention_key(s)))
         category = cat[s.meta["entity"]]
         if s.kind == "address_tail" or (s.kind == "address" and m.replacement == ""):
             category = "place"
