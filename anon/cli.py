@@ -4,6 +4,7 @@
   anon review  IN.docx [--entities E.xlsx] [--no-llm] [--no-ner] [--config rules.yaml] -o OUTDIR
   anon finalize REVIEW.docx --entities E.xlsx -o OUT.docx [--keep-entities]
   anon evaluate --pairs testdata/ [--no-llm] [-o eval_out]
+  anon app [--port 8765] [--workdir ~/.anon] [--no-browser]   review in the browser (local only)
 """
 
 from __future__ import annotations
@@ -189,6 +190,44 @@ def evaluate(
     llm = _llm_client(cfg, no_llm)
     report_path = run_evaluation(pairs, out, cfg, use_ner=not no_ner, llm=llm)
     typer.echo(f"Bericht: {report_path}")
+
+
+@app.command("app")
+def run_app(
+    port: int = typer.Option(8765, "--port", help="Port on 127.0.0.1"),
+    workdir: Path = typer.Option(Path.home() / ".anon", "--workdir", help="Where cases and settings are stored"),
+    config: Optional[Path] = typer.Option(None, "--config", exists=True, help="Rules override (YAML)"),
+    no_browser: bool = typer.Option(False, "--no-browser", help="Do not open the browser"),
+    verbose: bool = typer.Option(False, "-v", "--verbose"),
+) -> None:
+    """Start the review app in the browser. Listens on 127.0.0.1 only."""
+    import socket  # noqa: PLC0415
+    import threading  # noqa: PLC0415
+    import webbrowser  # noqa: PLC0415
+
+    _setup_logging(verbose)
+    _offline()
+    try:
+        import uvicorn  # noqa: PLC0415
+
+        from .app.server import create_app  # noqa: PLC0415
+    except ImportError as exc:  # pragma: no cover
+        typer.secho(f"Fehlendes Paket ({exc.name}). Bitte neu installieren: pip install -e .", fg="red", err=True)
+        raise typer.Exit(2) from None
+    try:  # something already listening (a bind probe would also trip over TIME_WAIT after a restart)
+        socket.create_connection(("127.0.0.1", port), timeout=0.5).close()
+        typer.secho(f"Port {port} ist belegt. Läuft die App schon? Sonst: anon app --port {port + 1}",
+                    fg="red", err=True)
+        raise typer.Exit(1)
+    except OSError:
+        pass
+    application = create_app(workdir.expanduser(), config)
+    url = f"http://127.0.0.1:{port}/"
+    typer.echo(f"Anonymisierung läuft: {url}\nDaten: {workdir}\nBeenden mit Ctrl+C.")
+    if not no_browser:
+        threading.Timer(1.2, webbrowser.open, [url]).start()
+    # no access log: keeps the console quiet (URLs carry no document text anyway)
+    uvicorn.run(application, host="127.0.0.1", port=port, log_level="warning", access_log=False)
 
 
 def main() -> None:  # pragma: no cover

@@ -39,7 +39,67 @@ weights in `./models/`. All other commands set `HF_HUB_OFFLINE=1` /
 `TRANSFORMERS_OFFLINE=1` and never download anything. Without the weights the
 tool runs with rules and gazetteers only and says so in the review copy.
 
-## Workflow
+## App: review in the browser
+
+```bash
+anon app
+```
+
+starts the review app on `http://127.0.0.1:8765` and opens it in the default
+browser (`--port`, `--workdir`, `--no-browser`, `--config`). Close it with
+Ctrl+C. Workflow:
+
+1. **Drop the decision** (.docx) onto the start page. Analysis runs locally
+   (progress bar); the case appears in the case list.
+2. **Prüfansicht** shows the decision with every proposal inline: original
+   struck through, replacement in a coloured label (colour = category).
+   Dashed outline = *question* (uncertain, never changed unless you say so).
+   * Click a mark → *Anonymisieren* / *Original lassen*, for all occurrences
+     of that person at once, change the replacement, or *Nie anonymisieren*.
+   * **N** jumps to the next open question, **A** / **X** decide, **J**/**K**
+     move between marks, **E** toggles the result view.
+   * Missed something? Select the text → *Anonymisieren als* Person / Firma /
+     Vertreter / Ort / Grundstück / Datum/ID (every occurrence is found), or
+     *Textstelle ersetzen …* for free rewording / `[…]` (guideline 2.4).
+   * Side panel: **Fragen** (with the words around each question),
+     **Entitäten** (all persons, places … with letters; rename, merge, keep),
+     **Hinweise** (guideline 2.4 suggestions from the local LLM), **Info**.
+3. **Ergebnis** shows the text exactly as it will be published.
+4. **Exportieren** builds the review copy from your decisions, finalizes it and
+   runs the leak check (same code as `anon finalize`). Only if it passes can
+   you download *… anonymisiert.docx*. If it fails, the dialog lists each
+   remaining original value with a *Zur Stelle* button.
+5. **Fall abschliessen** deletes the original and the mapping (one-way).
+
+Every decision is saved immediately. Cases live in `~/.anon/cases/` and are
+deleted automatically after `retention_days` (settings, default 14).
+A review copy edited in Word can still be finished from the start page
+(*In Word geprüft? Fertigstellen …*).
+
+**With a local LLM** (e.g. Qwen3 via Ollama, on the same machine or an
+internal server):
+
+```bash
+ollama pull qwen3:8b
+```
+
+Then in the app: ⚙ *Einstellungen* → *Sprachmodell verwenden*, server
+`http://localhost:11434/v1` (vLLM: `http://localhost:8000/v1`), *Modelle
+laden*, pick the model, save. The status pill top right turns green; new
+uploads use it (switch on the start page). Larger models (`qwen3:14b`,
+`qwen3:32b`) give better 2.4 suggestions if the GPU has the memory. Qwen3's
+thinking mode is switched off automatically (faster, same JSON).
+The LLM classifies roles (party vs. doctor/expert), groups name variants and
+suggests 2.4 passages; it never writes text. Hosts it may contact come from
+`llm.allowed_hosts` in the config file only; the settings dialog cannot
+widen them.
+
+Security: the server listens on 127.0.0.1 only, checks the Host header (DNS
+rebinding), requires a per-start token on every API call (other web pages in
+the same browser cannot use the API), sends a strict Content-Security-Policy
+and loads no external resources (works fully offline).
+
+## Workflow in Word (command line)
 
 ```bash
 anon review "Urteil.docx" -o out/ --no-llm
@@ -150,7 +210,10 @@ Accept-All = expected text in all story parts, structural validation, an
 independent LibreOffice (UNO) check of accept/reject and PDF conversion
 (skipped when LibreOffice + `python3-uno` are missing), keep-list, genitive,
 plots, legal forms, headers/footers/footnotes, metadata, leak check, xlsx
-round trip, LLM allow-list and fail-safe.
+round trip, LLM allow-list and fail-safe, the app API (token/host checks,
+decisions, entity actions, manual edits, export) and a browser run of the
+whole review flow (`tests/test_ui.py`, needs Node.js with Playwright; set
+`ANON_UI_SHOTS=dir` for screenshots).
 
 ## Status and evaluation
 
