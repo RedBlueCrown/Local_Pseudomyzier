@@ -17,13 +17,14 @@ from __future__ import annotations
 import ipaddress
 import json
 import logging
+import re
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 from ..config import Config
-from ..docx_io.reader import OBJECT, Document
+from ..docx_io.reader import OBJECT, Document, normalise_simple
 from ..resolve.entities import merge_into
 
 log = logging.getLogger(__name__)
@@ -69,19 +70,26 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class LLMClient:
-    def __init__(self, base_url: str, model: str, allowed_hosts: list[str], timeout: float = 180.0):
+    def __init__(self, base_url: str, model: str, allowed_hosts: list[str], timeout: float = 180.0,
+                 no_think: bool | None = None):
         self.allowed_hosts = list(allowed_hosts)
         self.base_url = check_url(base_url, self.allowed_hosts)
         self.model = model
         self.timeout = timeout
+        self.no_think = ("qwen3" in model.lower()) if no_think is None else no_think
         # ProxyHandler({}) ignores HTTP(S)_PROXY: requests go straight to the local host.
         self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
 
     @classmethod
     def from_config(cls, cfg: Config) -> "LLMClient":
         llm = cfg.rules["llm"]
+        no_think = llm.get("no_think", "auto")
         return cls(llm["base_url"], llm["model"], llm.get("allowed_hosts", ["localhost", "127.0.0.1", "::1"]),
-                   float(llm.get("timeout_s", 180)))
+                   float(llm.get("timeout_s", 180)), None if no_think == "auto" else bool(no_think))
+
+    def models(self) -> list[str]:
+        data = self._request("/models", timeout=5)
+        return sorted(m.get("id", "") for m in data.get("data", []) if m.get("id"))
 
     def _request(self, path: str, payload: dict | None = None, timeout: float | None = None) -> dict:
         url = check_url(self.base_url + path, self.allowed_hosts)
@@ -106,9 +114,13 @@ class LLMClient:
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             "response_format": {"type": "json_schema", "json_schema": {"name": name, "schema": schema, "strict": True}},
         }
+        if self.no_think:
+            payload["messages"][1]["content"] += "\n/no_think"  # Qwen3: answer directly, no reasoning trace
         resp = self._request("/chat/completions", payload)
         try:
-            content = resp["choices"][0]["message"]["content"]
+            content = resp["choices"][0]["message"]["content"] or ""
+            content = re.sub(r"<think>.*?</think>", "", content, flags=re.S).strip()
+            content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content).strip()
             return json.loads(content)
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
             raise LLMUnavailable("malformed response") from exc
@@ -116,6 +128,11 @@ class LLMClient:
 
 # ---------------------------------------------------------------------------
 # Tasks
+#
+# run_llm() talks to the model and returns a plain, serialisable LLMResult
+# (keyed by surface forms, not by entity ids), so an app can cache it and
+# re-apply it with apply_llm() after the reviewer edits entities, without
+# calling the model again.
 # ---------------------------------------------------------------------------
 SYSTEM = ("Du unterstützt die Anonymisierung liechtensteinischer Gerichtsentscheidungen nach der internen Richtlinie "
           "des OGH. Antworte ausschliesslich im verlangten JSON-Format. Zitate müssen wörtlich aus dem Text stammen.")
@@ -131,10 +148,19 @@ CLUSTER_SCHEMA = {
 PASSAGE_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["passages"],
     "properties": {"passages": {"type": "array", "items": {
-        "type": "object", "additionalProperties": False, "required": ["quote", "reason", "proposal"],
-        "properties": {"quote": {"type": "string"}, "reason": {"type": "string"}, "proposal": {"type": "string"}},
+        "type": "object", "additionalProperties": False,
+        "required": ["paragraph", "quote", "reason", "proposal"],
+        "properties": {"paragraph": {"type": "integer"}, "quote": {"type": "string"}, "reason": {"type": "string"},
+                       "proposal": {"type": "string"}},
     }}},
 }
+PASSAGE_PROMPT = (
+    "Richtlinie 2.4/2.5: Finde Passagen, die eine Person trotz Anonymisierung der Namen indirekt identifizierbar "
+    "machen (z. B. Beruf + Ort, Funktion in einem Verein, besondere Ereignisse, Familienverhältnisse, Krankheit, "
+    "Kindsentführung, Suizid, Adoption, Geschlechtsanpassung, Abstammung). Namen, Adressen, Daten und Nummern werden "
+    "bereits separat anonymisiert und sind KEINE Passagen. Gib für jede Passage die Absatznummer, ein wörtliches "
+    "Zitat, eine kurze Begründung und eine neutrale Formulierung oder '[…]' an. Leere Liste, wenn nichts.\n\n"
+)
 
 
 @dataclass
@@ -145,6 +171,24 @@ class PassageSuggestion:
     end: int
     reason: str
     proposal: str
+
+
+@dataclass
+class LLMResult:
+    groups: list[list[str]] = field(default_factory=list)   # first forms judged to be the same entity
+    roles: dict[str, list] = field(default_factory=dict)    # first form -> [role, confidence]
+    passages: list[dict] = field(default_factory=list)      # part, para, start, end, reason, proposal
+    error: str | None = None
+    calls: int = 0
+
+    def to_dict(self) -> dict:
+        return {"groups": self.groups, "roles": self.roles, "passages": self.passages, "error": self.error,
+                "calls": self.calls}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "LLMResult":
+        return cls(data.get("groups", []), data.get("roles", {}), data.get("passages", []), data.get("error"),
+                   data.get("calls", 0))
 
 
 def _snippets(doc: Document, entity, n: int, width: int) -> list[str]:
@@ -162,18 +206,119 @@ def _snippets(doc: Document, entity, n: int, width: int) -> list[str]:
     return out
 
 
-def classify_roles(client: LLMClient, doc: Document, entities, cfg: Config) -> list[str]:
-    notes = []
-    llm = cfg.rules["llm"]
-    for e in entities:
-        if e.kind not in ("person", "org", "representative") or not e.mentions:
+def _name_entities(entities) -> list:
+    return [e for e in entities if e.kind in ("person", "org", "representative") and e.forms and e.mentions]
+
+
+def _passage_batches(doc: Document, max_chars: int) -> list[list]:
+    batches: list[list] = []
+    current: list = []
+    size = 0
+    for para in doc.paragraphs:
+        if para.kind not in ("document", "footnotes") or len(para.text.strip()) < 80:
             continue
-        snippets = _snippets(doc, e, int(llm.get("max_snippets", 3)), int(llm.get("snippet_chars", 300)))
-        user = ("Welche Rolle hat die mit ⟦…⟧ markierte Person/Organisation im Verfahren?\n"
-                "Rollen: " + ", ".join(ROLES) + "\n\n" + "\n---\n".join(snippets))
-        res = client.chat_json(SYSTEM, user, "role", ROLE_SCHEMA)
-        role, conf = res.get("role"), float(res.get("confidence", 0))
-        if role not in ROLES:
+        if current and size + len(para.text) > max_chars:
+            batches.append(current)
+            current, size = [], 0
+        current.append(para)
+        size += len(para.text)
+    if current:
+        batches.append(current)
+    return batches
+
+
+def _locate(para, quote: str) -> tuple[int, int] | None:
+    quote = quote.strip()
+    if len(quote) < 8:
+        return None
+    idx = para.text.find(quote)
+    if idx >= 0:
+        return idx, idx + len(quote)
+    idx_n = para.norm.find(normalise_simple(quote))
+    if idx_n < 0:
+        return None  # not verbatim -> discarded
+    return para.to_orig(idx_n, idx_n + len(normalise_simple(quote)))
+
+
+def run_llm(client: LLMClient, doc: Document, entities, cfg: Config, progress=None) -> LLMResult:
+    """All LLM tasks. Never raises for an unreachable model: the partial result
+    carries `error` and the run continues without the missing parts."""
+    llm = cfg.rules["llm"]
+    names = _name_entities(entities)
+    batches = _passage_batches(doc, int(llm.get("batch_chars", 3000)))
+    total = (1 if len(names) > 1 else 0) + len(names) + len(batches)
+    result = LLMResult()
+
+    def tick(label: str) -> None:
+        result.calls += 1
+        if progress:
+            progress(result.calls, total, label)
+
+    try:
+        if len(names) > 1:
+            listing = "\n".join(f"{e.id}: " + " | ".join(e.forms) for e in names)
+            res = client.chat_json(SYSTEM, "Welche IDs bezeichnen dieselbe Person/Organisation? Gib Gruppen von IDs "
+                                           "zurück (nur Gruppen mit mindestens zwei IDs).\n" + listing,
+                                   "clusters", CLUSTER_SCHEMA)
+            by_id = {e.id: e for e in names}
+            result.groups = [[by_id[i].forms[0] for i in g if i in by_id] for g in res.get("groups", [])]
+            result.groups = [g for g in result.groups if len(g) > 1]
+            tick("Namensvarianten")
+        for e in names:
+            snippets = _snippets(doc, e, int(llm.get("max_snippets", 3)), int(llm.get("snippet_chars", 300)))
+            user = ("Welche Rolle hat die mit ⟦…⟧ markierte Person/Organisation im Verfahren?\n"
+                    "Rollen: " + ", ".join(ROLES) + "\n\n" + "\n---\n".join(snippets))
+            res = client.chat_json(SYSTEM, user, "role", ROLE_SCHEMA)
+            if res.get("role") in ROLES:
+                result.roles[e.forms[0]] = [res["role"], float(res.get("confidence", 0))]
+            tick("Rollen")
+        for batch in batches:
+            text = "\n\n".join(f"[P{i + 1}] " + p.text.replace(OBJECT, " ") for i, p in enumerate(batch))
+            res = client.chat_json(SYSTEM, PASSAGE_PROMPT + text, "passages", PASSAGE_SCHEMA)
+            for item in res.get("passages", []):
+                try:
+                    para = batch[int(item.get("paragraph", 0)) - 1]
+                except (IndexError, TypeError, ValueError):
+                    continue
+                span = _locate(para, str(item.get("quote", "")))
+                if span is None:
+                    continue
+                result.passages.append({"part": para.part, "para": para.index, "start": span[0], "end": span[1],
+                                        "reason": str(item.get("reason", ""))[:300],
+                                        "proposal": str(item.get("proposal", ""))[:300]})
+            tick("Textpassagen (2.4)")
+    except LLMUnavailable as exc:
+        log.warning("LLM failed during processing (%s): continuing without LLM results", exc)
+        result.error = str(exc)
+    return result
+
+
+def _find(entities, form: str):
+    for e in entities:
+        if form in e.forms:
+            return e
+    return None
+
+
+def apply_llm(result: LLMResult, doc: Document, entities, cfg: Config) -> tuple[list[str], list[PassageSuggestion]]:
+    """Apply a (possibly cached) LLMResult. Deterministic; no model call."""
+    notes: list[str] = []
+    for group in result.groups:
+        members = [m for m in (_find(entities, f) for f in group) if m is not None]
+        members = list(dict.fromkeys(members))
+        if len(members) < 2:
+            continue
+        head = members[0]
+        for other in members[1:]:
+            if _compatible(head, other):
+                merge_into(head, other, f"LLM: {other.id} zusammengeführt")
+                notes.append(f"LLM: zwei Namensvarianten zusammengeführt ({head.id})")
+            else:
+                head.notes.append(f"LLM: möglicherweise identisch mit {other.id}")
+                other.notes.append(f"LLM: möglicherweise identisch mit {head.id}")
+    for form, (role, conf) in result.roles.items():
+        e = _find(entities, form)
+        if e is None or not e.forms:
             continue
         e.llm_role = role
         if role in KEEP_ROLES and conf >= 0.5:
@@ -185,31 +330,17 @@ def classify_roles(client: LLMClient, doc: Document, entities, cfg: Config) -> l
                 and e.confidence < cfg.review_threshold:
             e.confidence = cfg.review_threshold
             e.notes.append("LLM bestätigt Personenbezug")
-    return notes
-
-
-def cluster_variants(client: LLMClient, entities) -> list[str]:
-    names = [e for e in entities if e.kind in ("person", "org", "representative") and e.forms]
-    if len(names) < 2:
-        return []
-    listing = "\n".join(f"{e.id}: " + " | ".join(e.forms) for e in names)
-    res = client.chat_json(SYSTEM, "Welche IDs bezeichnen dieselbe Person/Organisation? Gib Gruppen von IDs zurück "
-                                   "(nur Gruppen mit mindestens zwei IDs).\n" + listing, "clusters", CLUSTER_SCHEMA)
-    by_id = {e.id: e for e in names}
-    notes = []
-    for group in res.get("groups", []):
-        members = [by_id[i] for i in group if i in by_id]
-        if len(members) < 2:
+    passages = []
+    for p in result.passages:
+        try:
+            para = doc.get(p["part"], p["para"])
+        except KeyError:
             continue
-        head = members[0]
-        for other in members[1:]:
-            if _compatible(head, other):
-                merge_into(head, other, f"LLM: {other.id} zusammengeführt")
-                notes.append(f"LLM: zwei Namensvarianten zusammengeführt ({head.id})")
-            else:
-                head.notes.append(f"LLM: möglicherweise identisch mit {other.id}")
-                other.notes.append(f"LLM: möglicherweise identisch mit {head.id}")
-    return notes
+        if 0 <= p["start"] < p["end"] <= len(para.text):
+            passages.append(PassageSuggestion(p["part"], p["para"], p["start"], p["end"], p["reason"], p["proposal"]))
+    if result.error:
+        notes.append("LLM während der Verarbeitung nicht erreichbar: Ergebnisse teilweise ohne LLM.")
+    return notes, passages
 
 
 def _compatible(a, b) -> bool:
@@ -222,44 +353,10 @@ def _compatible(a, b) -> bool:
     return any(x in y or y in x for x in fa for y in fb)
 
 
-def suggest_passages(client: LLMClient, doc: Document) -> list[PassageSuggestion]:
-    out: list[PassageSuggestion] = []
-    for para in doc.paragraphs:
-        if para.kind not in ("document", "footnotes") or len(para.text) < 80:
-            continue
-        text = para.text.replace(OBJECT, " ")
-        res = client.chat_json(
-            SYSTEM,
-            "Richtlinie 2.4: Finde Passagen, die eine Person trotz Anonymisierung indirekt identifizierbar machen "
-            "(z. B. Beruf + Ort, besondere Ereignisse, Familienverhältnisse). Zitiere wörtlich, begründe kurz und "
-            "schlage eine neutrale Formulierung oder '[…]' vor. Leere Liste, wenn nichts.\n\nText:\n" + text,
-            "passages", PASSAGE_SCHEMA)
-        for p in res.get("passages", []):
-            quote = (p.get("quote") or "").strip()
-            if len(quote) < 8:
-                continue
-            idx = para.text.find(quote)
-            if idx < 0:
-                idx_n = para.norm.find(quote)
-                if idx_n < 0:
-                    continue  # not verbatim -> discarded
-                s, e = para.to_orig(idx_n, idx_n + len(quote))
-            else:
-                s, e = idx, idx + len(quote)
-            out.append(PassageSuggestion(para.part, para.index, s, e, str(p.get("reason", ""))[:300],
-                                         str(p.get("proposal", ""))[:300]))
-    return out
-
-
 def enrich_entities(client: LLMClient, doc: Document, entities, cfg: Config) -> list[str]:
-    """Run all LLM tasks; on any endpoint failure fall back silently (warning)."""
-    try:
-        notes = cluster_variants(client, entities)
-        notes += classify_roles(client, doc, [e for e in entities if e.forms], cfg)
-        client.passages = suggest_passages(client, doc)
-        return notes
-    except LLMUnavailable as exc:
-        log.warning("LLM failed during processing (%s): continuing without LLM results", exc)
-        client.passages = []
-        return ["LLM während der Verarbeitung nicht erreichbar: Ergebnisse ohne LLM."]
-
+    """Run and apply all LLM tasks (CLI path); the result is kept on the client."""
+    result = run_llm(client, doc, entities, cfg)
+    notes, passages = apply_llm(result, doc, entities, cfg)
+    client.passages = passages
+    client.result = result
+    return notes

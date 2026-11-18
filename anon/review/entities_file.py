@@ -145,3 +145,11 @@ def read_entities(path: Path) -> list[EntityRow]:
         ))
     wb.close()
     return out
+
+
+def rows_from_entities(entities: list[Entity]) -> list[EntityRow]:
+    """The rows write_entities() would produce, without a file (app export)."""
+    return [EntityRow(id=e.id, category=e.category, role=e.role, forms=list(e.forms), replacement=e.replacement,
+                      decision=e.decision, merge_into=None, tool_replacement=e.replacement, tool_decision=e.decision,
+                      leak_terms=[t for t in e.sensitive_terms() if t not in e.forms], kind=e.kind)
+            for e in entities]

@@ -7,9 +7,10 @@ finalize() review copy -> clean export, with leak check
 
 from __future__ import annotations
 
+import copy
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from .config import Config
@@ -49,6 +50,8 @@ class Analysis:
     stats: dict = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
     passages: list = field(default_factory=list)  # guideline 2.4 suggestions (comments only)
+    ner_cache: list = field(default_factory=list)  # NER spans for re-analysis without the model
+    llm_cache: dict | None = None                  # LLM result for re-analysis without the model
 
 
 def _apply_overrides(builder: EntityBuilder, entities: list[Entity], rows: list[EntityRow]) -> list[Entity]:
@@ -99,7 +102,18 @@ def _apply_overrides(builder: EntityBuilder, entities: list[Entity], rows: list[
 
 
 def analyse(data: bytes, cfg: Config, *, use_ner: bool = True, ner: NerDetector | None = None,
-            llm=None, rows: list[EntityRow] | None = None) -> Analysis:
+            llm=None, rows: list[EntityRow] | None = None, ner_cache: list[dict] | None = None,
+            llm_cache: dict | None = None, progress=None) -> Analysis:
+    """Detection + resolution on the ORIGINAL document.
+
+    ner_cache / llm_cache: results of an earlier run (Analysis.ner_cache /
+    Analysis.llm_cache) - re-analysing after reviewer edits then needs neither
+    model. progress(stage, fraction) is called with German stage names."""
+    def report(stage: str, fraction: float) -> None:
+        if progress:
+            progress(stage, fraction)
+
+    report("Dokument lesen", 0.02)
     pkg = DocxPackage.from_bytes(data)
     notes: list[str] = []
     existing = accept_all_parts(pkg)
@@ -114,13 +128,20 @@ def analyse(data: bytes, cfg: Config, *, use_ner: bool = True, ner: NerDetector 
     keep_spans += [s for s in rubrum if s.kind == KEEP_KIND]
     candidates: list[Span] = [s for s in rubrum if s.kind != KEEP_KIND] + rules.detect(doc)
     stats = {"paragraphs": len(doc.paragraphs), "judges_clerks": len(people)}
-    if use_ner:
+    report("Regeln und Verzeichnisse", 0.1)
+    if ner_cache is not None:
+        ner_spans = [Span(**d) for d in copy.deepcopy(ner_cache)]
+        stats["ner"] = "cached"
+    elif use_ner:
+        report("Namenserkennung (NER)", 0.15)
         ner = ner or NerDetector.from_config(cfg)
         ner_spans = ner.detect(doc)
         stats["ner"] = "on" if ner.available else "unavailable"
-        candidates += ner_spans
     else:
+        ner_spans = []
         stats["ner"] = "off"
+    ner_cache_out = [asdict(sp) for sp in ner_spans]
+    candidates += ner_spans
     _soften_cited_context(doc, candidates, keep_spans)
     candidates = apply_keep(candidates, keep_spans)
     selected, swallowed = resolve_overlaps(candidates)
@@ -136,15 +157,24 @@ def analyse(data: bytes, cfg: Config, *, use_ner: bool = True, ner: NerDetector 
         if e.kind == "address":
             e.forms = [f.strip(" ,;.") for f in e.forms if f.strip(" ,;.")]
     passages = []
-    if llm is not None:
-        from .detect.llm import enrich_entities  # noqa: PLC0415
+    llm_result = None
+    if llm_cache is not None or llm is not None:
+        from .detect.llm import LLMResult, apply_llm, run_llm  # noqa: PLC0415
 
-        notes.extend(enrich_entities(llm, doc, entities, cfg))
-        passages = list(getattr(llm, "passages", []))
+        if llm_cache is not None:
+            llm_result = LLMResult.from_dict(llm_cache)
+        else:
+            report("Lokales Sprachmodell", 0.3)
+            llm_result = run_llm(llm, doc, entities, cfg,
+                                 progress=lambda done, total, label: report(
+                                     f"Lokales Sprachmodell: {label} ({done}/{total})", 0.3 + 0.6 * done / max(total, 1)))
+        llm_notes, passages = apply_llm(llm_result, doc, entities, cfg)
+        notes.extend(llm_notes)
         entities = [e for e in entities if e.forms]
-        stats["llm"] = "on"
+        stats["llm"] = "error" if llm_result.error else "on"
     else:
         stats["llm"] = "off"
+    report("Zuordnung und Buchstaben", 0.92)
     if rows:
         entities = _apply_overrides(builder, entities, rows)
     for e in entities:
@@ -166,7 +196,9 @@ def analyse(data: bytes, cfg: Config, *, use_ner: bool = True, ner: NerDetector 
         "by_category": _count_by_category(mentions, entities),
     })
     stats["passages"] = len(passages)
-    return Analysis(pkg, doc, entities, mentions, people, stats, notes, passages)
+    report("Fertig", 1.0)
+    return Analysis(pkg, doc, entities, mentions, people, stats, notes, passages, ner_cache_out,
+                    llm_result.to_dict() if llm_result else None)
 
 
 _CITED_COURT = re.compile(r"\b(?:EGMR|EuGH|EFTA-(?:Gerichtshof|GH)|Gerichtshofs?\s+für\s+Menschenrechte|Bsw\.)")
@@ -285,7 +317,8 @@ class FinalizeResult:
     stats: dict
 
 
-def finalize(review_bytes: bytes, rows: list[EntityRow], cfg: Config) -> FinalizeResult:
+def finalize(review_bytes: bytes, rows: list[EntityRow], cfg: Config,
+             extra_valid: set[str] | None = None) -> FinalizeResult:
     pkg = DocxPackage.from_bytes(review_bytes)
     tool_authors = cfg.tool_authors
     states = tool_comment_states(pkg)
@@ -313,7 +346,8 @@ def finalize(review_bytes: bytes, rows: list[EntityRow], cfg: Config) -> Finaliz
     doc = read_document(pkg)
     ranges = tool_ranges(doc)
     _, keep_spans = KeepList(cfg).detect(doc)
-    report = check(pkg, doc, terms, ranges, items, states, keep_spans, _valid_replacements(rows, cfg))
+    report = check(pkg, doc, terms, ranges, items, states, keep_spans,
+                   _valid_replacements(rows, cfg) | set(extra_valid or ()))
     if not report.ok:
         return FinalizeResult(None, report, stats)
     remove_tool_bookmarks(pkg)
@@ -340,3 +374,87 @@ def _valid_replacements(rows: list[EntityRow], cfg: Config) -> set[str]:
                 .format(year_bound=year, year=year - 1))
     out |= {str(n) for n in range(0, 10000)}
     return out
+
+
+# ---------------------------------------------------------------------------
+# Review in the app: decisions per occurrence instead of Word
+# ---------------------------------------------------------------------------
+@dataclass
+class ManualEdit:
+    part: str
+    para: int
+    start: int
+    end: int
+    replacement: str
+
+
+def mention_key(span: Span) -> str:
+    return f"{span.part}|{span.para}|{span.start}|{span.end}"
+
+
+def default_decision(m: Mention) -> str:
+    return "accept" if m.change else "open"
+
+
+def build_reviewed_package(analysis: Analysis, cfg: Config, decisions: dict[str, str],
+                           manual: list[ManualEdit], with_summary: bool = True) -> DocxPackage:
+    """Write the review copy as the reviewer decided in the app: accepted and
+    applied items are tool changes, rejected ones are written and then
+    rejected (their hidden bookmark tells finalize the reviewer kept the
+    original), dismissed questions become comments that are removed, manual
+    edits are changes by "Manuell". The result goes through finalize() like a
+    review copy edited in Word."""
+    from .docx_io.finalize import reject_items  # noqa: PLC0415
+
+    cat = {e.id: e.category for e in analysis.entities}
+    manual_ranges = [(m.part, m.para, m.start, m.end) for m in manual]
+
+    def covered(s: Span) -> bool:
+        return any(p == s.part and q == s.para and a < s.end and s.start < b for p, q, a, b in manual_ranges)
+
+    edits: list[Edit] = []
+    to_reject: set[int] = set()
+    for m in analysis.mentions:
+        s = m.span
+        if covered(s):
+            continue  # a manual edit replaces this whole passage
+        decision = decisions.get(mention_key(s), default_decision(m))
+        category = cat[s.meta["entity"]]
+        if s.kind == "address_tail" or (s.kind == "address" and m.replacement == ""):
+            category = "place"
+        kind = analysis.doc.get(s.part, s.para).kind
+        if m.change or decision == "apply":
+            edits.append(Edit(s.part, s.para, s.start, s.end, m.replacement, cfg.author(category),
+                              cfg.highlight(category), m.item_id))
+            if decision == "reject":
+                to_reject.add(m.item_id)
+        elif kind in ("header", "footer"):
+            edits.append(Edit(s.part, s.para, s.start, s.end, m.replacement, cfg.author("review"), None, m.item_id))
+            if decision == "dismiss":
+                to_reject.add(m.item_id)
+        else:
+            edits.append(Edit(s.part, s.para, s.start, s.end, None, cfg.author("review"), None, m.item_id,
+                              comment=m.comment))
+    next_id = max((m.item_id for m in analysis.mentions), default=0)
+    for me in manual:
+        next_id += 1
+        edits.append(Edit(me.part, me.para, me.start, me.end, me.replacement, cfg.author("manual"), None, next_id))
+    writer = RevisionWriter(analysis.doc)
+    writer.apply(edits)
+    if with_summary:
+        insert_summary(analysis.pkg, analysis.entities, cfg, list(analysis.notes), writer.ids)
+    reject_items(analysis.pkg, to_reject, cfg.tool_authors)
+    return DocxPackage.from_bytes(analysis.pkg.to_bytes())
+
+
+def export_clean(analysis: Analysis, cfg: Config, decisions: dict[str, str],
+                 manual: list[ManualEdit]) -> tuple[FinalizeResult, bytes]:
+    """Clean export from app decisions. Returns (finalize result, review copy)."""
+    from .review.entities_file import rows_from_entities  # noqa: PLC0415
+
+    pkg = build_reviewed_package(analysis, cfg, decisions, manual)
+    review_bytes = pkg.to_bytes()
+    remove_comments(pkg, None)  # every question was decided; dismissed ones need no change
+    result = finalize(pkg.to_bytes(), rows_from_entities(analysis.entities), cfg,
+                      extra_valid={me.replacement for me in manual})
+    return result, review_bytes

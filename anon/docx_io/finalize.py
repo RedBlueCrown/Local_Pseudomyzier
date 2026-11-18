@@ -522,3 +522,35 @@ def paragraph_texts(doc: Document, kinds: tuple[str, ...] | None = None) -> dict
 
 def iter_paragraphs(doc: Document) -> list[Paragraph]:
     return doc.paragraphs
+
+
+def reject_items(pkg: DocxPackage, items: set[int], tool_authors: set[str]) -> int:
+    """Reject the tool's revisions inside the _anonR_ bookmarks of `items`
+    (the bookmark stays, so the leak check knows the reviewer rejected it)."""
+    if not items:
+        return 0
+    n = 0
+    for part, _ in pkg.story_parts():
+        open_ids: dict[str, int] = {}
+        targets: list[etree._Element] = []
+        for el in pkg.xml(part).iter():
+            if el.tag == w("bookmarkStart"):
+                mm = _BM_RE.match(el.get(w("name"), ""))
+                if mm and el.get(w("name"), "").startswith(BOOKMARK_CHANGE) and int(mm.group(1)) in items:
+                    open_ids[el.get(w("id"))] = int(mm.group(1))
+            elif el.tag == w("bookmarkEnd"):
+                open_ids.pop(el.get(w("id")), None)
+            elif (el.tag in _DEL or el.tag in _INS) and open_ids and el.get(w("author")) in tool_authors \
+                    and _mark_context(el) is None:
+                targets.append(el)
+        for el in targets:
+            if el.tag in _DEL:
+                for t in el.iter(w("delText")):
+                    t.tag = w("t")
+                for t in el.iter(w("delInstrText")):
+                    t.tag = w("instrText")
+                _unwrap(el)
+            else:
+                _remove(el)
+            n += 1
+    return n

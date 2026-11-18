@@ -25,6 +25,7 @@ categories:
   plot:           {author: "Grundstück", highlight: magenta}
   id:             {author: "Datum/ID",   highlight: lightGray}
   review:         {author: "Prüfen",     highlight: null}
+  manual:         {author: "Manuell",    highlight: null}  # free-text edits made in the app
 
 # Open policy decisions (guideline leaves room) -> switches.
 policy:
@@ -103,6 +104,10 @@ llm:
   timeout_s: 180
   max_snippets: 3
   snippet_chars: 300
+  # Paragraphs per guideline-2.4 request (characters); larger = fewer calls.
+  batch_chars: 3000
+  # Qwen3 models think before answering; "auto" disables that for qwen3 models.
+  no_think: auto
 
 detect:
   rubrum:

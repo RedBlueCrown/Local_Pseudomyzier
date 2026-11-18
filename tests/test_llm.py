@@ -4,6 +4,7 @@ changes text outside detected spans."""
 from __future__ import annotations
 
 import json
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -92,12 +93,15 @@ class _Handler(BaseHTTPRequestHandler):
             content = {"groups": []}
         else:
             content = {"passages": []}
-            if "einzige Tierarzt" in user:
-                content["passages"] = [
-                    {"quote": "der einzige Tierarzt des Dorfes", "reason": "Beruf + Ort identifizieren",
-                     "proposal": "[…]"},
-                    {"quote": "ein erfundenes Zitat, das nicht im Text steht", "reason": "x", "proposal": "y"},
-                ]
+            for n, chunk in re.findall(r"\[P(\d+)\] ([^\n]*)", user):
+                if "einzige Tierarzt" in chunk:
+                    content["passages"] = [
+                        {"paragraph": int(n), "quote": "der einzige Tierarzt des Dorfes",
+                         "reason": "Beruf + Ort identifizieren", "proposal": "[…]"},
+                        {"paragraph": int(n), "quote": "ein erfundenes Zitat, das nicht im Text steht",
+                         "reason": "x", "proposal": "y"},
+                    ]
+            type(self).last_user = user
         self._send({"choices": [{"message": {"content": json.dumps(content)}}]})
 
 
